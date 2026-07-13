@@ -14,6 +14,7 @@ ActionHandler = Callable[[EventArgs], Awaitable[HandlerReturn]]
 @dataclass(slots=True)
 class ActionPolicy:
     stop_on_failure: bool = True
+    default_timeout_seconds: float | None = None
 
 
 @dataclass(slots=True)
@@ -43,6 +44,33 @@ class ActionEngine:
 
         if policy is not None:
             self._actions[action_name].policy = policy
+
+    def snapshot_state(self) -> dict[str, ActionRegistration]:
+        snapshot: dict[str, ActionRegistration] = {}
+        for action_name, registration in self._actions.items():
+            cloned_policy = ActionPolicy(
+                stop_on_failure=registration.policy.stop_on_failure,
+                default_timeout_seconds=registration.policy.default_timeout_seconds,
+            )
+            cloned_stages: list[list[RegisteredHandler]] = []
+            for stage in registration.stages:
+                cloned_stage = [
+                    RegisteredHandler(
+                        handler_id=handler.handler_id,
+                        callback=handler.callback,
+                        stop_on_failure=handler.stop_on_failure,
+                        timeout_seconds=handler.timeout_seconds,
+                    )
+                    for handler in stage
+                ]
+                cloned_stages.append(cloned_stage)
+
+            snapshot[action_name] = ActionRegistration(policy=cloned_policy, stages=cloned_stages)
+
+        return snapshot
+
+    def restore_state(self, snapshot: dict[str, ActionRegistration]) -> None:
+        self._actions = snapshot
 
     def clear_action(self, action_name: str) -> None:
         if action_name in self._actions:
@@ -100,6 +128,32 @@ class ActionEngine:
 
         return [handler.handler_id for stage in registration.stages for handler in stage]
 
+    def describe_action(self, action_name: str) -> dict[str, object] | None:
+        registration = self._actions.get(action_name)
+        if registration is None:
+            return None
+
+        stages: list[list[dict[str, object]]] = []
+        for stage in registration.stages:
+            stage_data: list[dict[str, object]] = []
+            for handler in stage:
+                stage_data.append(
+                    {
+                        "handler_id": handler.handler_id,
+                        "stop_on_failure": handler.stop_on_failure,
+                        "timeout_seconds": handler.timeout_seconds,
+                    }
+                )
+            stages.append(stage_data)
+
+        return {
+            "policy": {
+                "stop_on_failure": registration.policy.stop_on_failure,
+                "default_timeout_seconds": registration.policy.default_timeout_seconds,
+            },
+            "stages": stages,
+        }
+
     async def dispatch(self, event_args: EventArgs) -> Result[str, BaseException]:
         registration = self._actions.get(event_args.action_name)
         if registration is None or not registration.stages:
@@ -111,7 +165,16 @@ class ActionEngine:
             if not stage:
                 continue
 
-            stage_results = await asyncio.gather(*(self._run_handler(handler, event_args) for handler in stage))
+            stage_results = await asyncio.gather(
+                *(
+                    self._run_handler(
+                        handler,
+                        event_args,
+                        registration.policy.default_timeout_seconds,
+                    )
+                    for handler in stage
+                )
+            )
             for handler, result in zip(stage, stage_results):
                 event_args.results[handler.handler_id] = result
                 if Result.is_failure(result):
@@ -136,16 +199,25 @@ class ActionEngine:
 
         return Result.success(text)
 
-    async def _run_handler(self, handler: RegisteredHandler, event_args: EventArgs) -> HandlerReturn:
+    async def _run_handler(
+        self,
+        handler: RegisteredHandler,
+        event_args: EventArgs,
+        default_timeout_seconds: float | None,
+    ) -> HandlerReturn:
+        effective_timeout = handler.timeout_seconds
+        if effective_timeout is None:
+            effective_timeout = default_timeout_seconds
+
         try:
-            if handler.timeout_seconds is None:
+            if effective_timeout is None:
                 result = await handler.callback(event_args)
             else:
-                result = await asyncio.wait_for(handler.callback(event_args), timeout=handler.timeout_seconds)
+                result = await asyncio.wait_for(handler.callback(event_args), timeout=effective_timeout)
         except TimeoutError:
             return Result.failure(
                 TimeoutError(
-                    f"Handler '{handler.handler_id}' timed out after {handler.timeout_seconds} seconds"
+                    f"Handler '{handler.handler_id}' timed out after {effective_timeout} seconds"
                 )
             )
         except Exception as exc:  # noqa: BLE001

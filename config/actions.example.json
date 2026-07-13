@@ -2,20 +2,19 @@
     "actions": {
         "status": {
             "stop_on_failure": true,
+            "default_timeout_seconds": 5,
             "handlers": [
                 {
                     "id": "docker.status.collect",
                     "module": "bot_service.actions.docker_actions",
                     "callable": "status_collect_handler",
-                    "stage": 0,
-                    "timeout_seconds": 5
+                    "stage": 0
                 },
                 {
                     "id": "docker.status.render",
                     "module": "bot_service.actions.docker_actions",
                     "callable": "status_render_handler",
-                    "stage": 1,
-                    "timeout_seconds": 5
+                    "stage": 1
                 },
                 {
                     "id": "engine.status.runtime",

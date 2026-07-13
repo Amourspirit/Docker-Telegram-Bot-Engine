@@ -123,3 +123,29 @@ async def test_handler_timeout_returns_failure_message() -> None:
     assert Result.is_success(result)
     assert "timed out" in result.data
     assert "final" not in result.data
+
+
+async def test_action_default_timeout_applies_when_handler_timeout_is_missing() -> None:
+    engine = ActionEngine()
+
+    async def slow_handler(_event_args: EventArgs):
+        await asyncio.sleep(0.05)
+        return Result.success("slow")
+
+    engine.register_action(
+        "status",
+        policy=ActionPolicy(stop_on_failure=True, default_timeout_seconds=0.001),
+    )
+    engine.register_handler("status", "h.slow", slow_handler, stage=0)
+
+    result = await engine.dispatch(
+        EventArgs(
+            action_name="status",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-default-timeout-1",
+        )
+    )
+
+    assert Result.is_success(result)
+    assert "timed out" in result.data

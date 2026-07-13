@@ -10,6 +10,7 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - restarts a container with `/restart <container-name>`
 - shows logs with `/logs <container-name> [tail]`
 - lists available commands with `/help`
+- shows action details with `/action_info <action_name>`
 - reloads host action config with `/reload_actions`
 - ignores requests from Telegram users not listed in `ALLOWED_TELEGRAM_IDS`
 - supports an action engine with staged handlers for each command
@@ -30,7 +31,9 @@ BOT_ACTIONS_CONFIG=/app/config/actions.json
 
 An example config is available at `config/actions.example.json`.
 
-Each handler entry can define `timeout_seconds` to bound execution time.
+Each action can define `default_timeout_seconds`, and each handler entry can override with `timeout_seconds`.
+
+If `/reload_actions` fails, the bot restores the last known good action configuration snapshot in memory.
 
 ## Runtime
 
@@ -66,6 +69,7 @@ Open a chat with your bot in Telegram and send:
 /restart <container-name>
 /logs <container-name> 50
 /help
+/action_info status
 /reload_actions
 ```
 

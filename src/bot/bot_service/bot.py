@@ -2,6 +2,8 @@
 import os
 import logging
 import uuid
+from pathlib import Path
+
 import docker
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -9,7 +11,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from bot_service.actions import register_default_actions
 from bot_service.engine import ActionEngine
 from bot_service.event_args import EventArgs
-from bot_service.host_loader import load_actions_from_file
+from bot_service.host_loader import load_actions_from_json
 from bot_service.result import Result
 
 # Configure logging
@@ -40,16 +42,52 @@ action_engine = ActionEngine()
 register_default_actions(action_engine)
 
 HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
+LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON: str | None = None
+
+
+def _read_host_actions_config_json() -> Result[str, BaseException]:
+    if not HOST_ACTIONS_CONFIG:
+        return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
+
+    path = Path(HOST_ACTIONS_CONFIG)
+    if not path.exists():
+        return Result.failure(FileNotFoundError(f"Action config file not found: {HOST_ACTIONS_CONFIG}"))
+
+    try:
+        return Result.success(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+
+def _load_host_actions_config_from_json(
+    config_json: str,
+    update_last_known_good: bool,
+) -> Result[int, BaseException]:
+    global LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON
+
+    result = load_actions_from_json(
+        action_engine,
+        config_json,
+        replace_configured_actions=True,
+    )
+
+    if Result.is_success(result) and update_last_known_good:
+        LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON = config_json
+
+    return result
 
 
 def _load_host_actions_config() -> Result[int, BaseException]:
     if not HOST_ACTIONS_CONFIG:
         return Result.success(0)
 
-    return load_actions_from_file(
-        action_engine,
-        HOST_ACTIONS_CONFIG,
-        replace_configured_actions=True,
+    json_result = _read_host_actions_config_json()
+    if Result.is_failure(json_result):
+        return Result.failure(json_result.error)
+
+    return _load_host_actions_config_from_json(
+        json_result.data,
+        update_last_known_good=True,
     )
 
 
@@ -136,7 +174,61 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
+    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON:
+        restore_result = _load_host_actions_config_from_json(
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON,
+            update_last_known_good=False,
+        )
+        if Result.is_success(restore_result):
+            await message.reply_text(
+                "⚠️ Reload failed. Restored last known good action configuration.",
+            )
+            return
+
     await message.reply_text(f"❌ Failed to reload actions: {load_result.error}")
+
+
+async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        return
+
+    message = update.message
+    if message is None:
+        return
+
+    if not context.args:
+        await message.reply_text("Usage: /action_info <action_name>")
+        return
+
+    action_name = context.args[0].lstrip("/")
+    details = action_engine.describe_action(action_name)
+    if details is None:
+        await message.reply_text(f"Action '{action_name}' is not registered.")
+        return
+
+    policy = details["policy"]
+    stages = details["stages"]
+
+    lines = [f"Action: /{action_name}"]
+    lines.append(f"stop_on_failure: {policy['stop_on_failure']}")
+    lines.append(f"default_timeout_seconds: {policy['default_timeout_seconds']}")
+    lines.append("Stages:")
+
+    for idx, stage in enumerate(stages):
+        if not stage:
+            lines.append(f"  stage {idx}: (no handlers)")
+            continue
+
+        lines.append(f"  stage {idx}:")
+        for handler in stage:
+            lines.append(
+                "    - "
+                f"{handler['handler_id']} "
+                f"(stop_on_failure={handler['stop_on_failure']}, "
+                f"timeout_seconds={handler['timeout_seconds']})"
+            )
+
+    await message.reply_text("\n".join(lines))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -154,6 +246,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append(f"/{action_name} - {handler_count} handler(s)")
 
     lines.append("/reload_actions - Reload host action config")
+    lines.append("/action_info <action> - Show policy and handler stages")
     await message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 def main() -> None:
@@ -169,6 +262,7 @@ def main() -> None:
     app.add_handler(CommandHandler("restart", restart_container))
     app.add_handler(CommandHandler("logs", logs_container))
     app.add_handler(CommandHandler("reload_actions", reload_actions))
+    app.add_handler(CommandHandler("action_info", action_info))
     app.add_handler(CommandHandler("help", help_command))
     
     logging.info("Bot is polling...")

@@ -14,21 +14,12 @@ def _resolve_callable(module_name: str, callable_name: str) -> Any:
     return getattr(module, callable_name)
 
 
-def load_actions_from_file(
+def _load_actions_from_payload(
     engine: ActionEngine,
-    config_path: str,
+    payload: dict[str, Any],
     replace_configured_actions: bool = False,
 ) -> Result[int, BaseException]:
-    """Load and register actions from a host-mounted JSON config file."""
-    path = Path(config_path)
-    if not path.exists():
-        return Result.failure(FileNotFoundError(f"Action config file not found: {config_path}"))
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        return Result.failure(exc)
-
+    snapshot = engine.snapshot_state()
     try:
         actions = payload.get("actions", {})
         total_registered = 0
@@ -37,7 +28,14 @@ def load_actions_from_file(
                 engine.clear_action(action_name)
 
             stop_on_failure = action_config.get("stop_on_failure", True)
-            engine.register_action(action_name, policy=ActionPolicy(stop_on_failure=stop_on_failure))
+            default_timeout_seconds = action_config.get("default_timeout_seconds")
+            engine.register_action(
+                action_name,
+                policy=ActionPolicy(
+                    stop_on_failure=stop_on_failure,
+                    default_timeout_seconds=default_timeout_seconds,
+                ),
+            )
 
             for handler in action_config.get("handlers", []):
                 handler_id = handler["id"]
@@ -63,4 +61,44 @@ def load_actions_from_file(
 
         return Result.success(total_registered)
     except Exception as exc:  # noqa: BLE001
+        engine.restore_state(snapshot)
         return Result.failure(exc)
+
+
+def load_actions_from_json(
+    engine: ActionEngine,
+    config_json: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    try:
+        payload = json.loads(config_json)
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    return _load_actions_from_payload(
+        engine,
+        payload,
+        replace_configured_actions=replace_configured_actions,
+    )
+
+
+def load_actions_from_file(
+    engine: ActionEngine,
+    config_path: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    """Load and register actions from a host-mounted JSON config file."""
+    path = Path(config_path)
+    if not path.exists():
+        return Result.failure(FileNotFoundError(f"Action config file not found: {config_path}"))
+
+    try:
+        config_json = path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    return load_actions_from_json(
+        engine,
+        config_json,
+        replace_configured_actions=replace_configured_actions,
+    )
