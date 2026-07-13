@@ -8,6 +8,9 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
       - ALLOWED_TELEGRAM_IDS=${ALLOWED_TELEGRAM_IDS:?Set ALLOWED_TELEGRAM_IDS in .env} # Your Telegram User ID
+      - BOT_ACTIONS_CONFIG=${BOT_ACTIONS_CONFIG:-}
     volumes:
       # macOS Docker Desktop Socket Mapping
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+      # Optional host action configuration file
+      # - ./config/actions.json:/app/config/actions.json:ro

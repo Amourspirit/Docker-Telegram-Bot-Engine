@@ -7,8 +7,15 @@ from bot_service.event_args import EventArgs
 from bot_service.result import Result
 
 
-async def status_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
+def _get_docker_client(event_args: EventArgs):
     docker_client = event_args.shared_state.get("docker_client")
+    if docker_client is None:
+        return None
+    return docker_client
+
+
+async def status_collect_handler(event_args: EventArgs) -> Result[str | None, BaseException | None]:
+    docker_client = _get_docker_client(event_args)
     if docker_client is None:
         return Result.failure(RuntimeError("Docker client not available"))
 
@@ -17,7 +24,29 @@ async def status_handler(event_args: EventArgs) -> Result[str, BaseException | N
     except Exception as exc:  # noqa: BLE001
         return Result.failure(exc)
 
-    response = "🐳 **Docker Status:**\n\n"
+    running_count = len([c for c in containers if c.status == "running"])
+    stopped_count = len(containers) - running_count
+
+    event_args.shared_state["docker_containers"] = containers
+    event_args.shared_state["docker_summary"] = {
+        "total": len(containers),
+        "running": running_count,
+        "stopped": stopped_count,
+    }
+
+    return Result.success(None)
+
+
+async def status_render_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
+    containers = event_args.shared_state.get("docker_containers")
+    summary = event_args.shared_state.get("docker_summary")
+    if containers is None or summary is None:
+        return Result.failure(RuntimeError("Docker status data not available"))
+
+    response = (
+        "🐳 **Docker Status**\n"
+        f"Total: {summary['total']} | Running: {summary['running']} | Stopped: {summary['stopped']}\n\n"
+    )
     for container in containers:
         icon = "🟢" if container.status == "running" else "🔴"
         response += f"{icon} `{container.name}` ({container.status})\n"
@@ -25,8 +54,19 @@ async def status_handler(event_args: EventArgs) -> Result[str, BaseException | N
     return Result.success(response)
 
 
+async def status_runtime_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
+    handlers_completed = len(event_args.results)
+    response = (
+        "🧩 **Action Engine**\n"
+        f"Action: `{event_args.action_name}`\n"
+        f"Correlation ID: `{event_args.correlation_id}`\n"
+        f"Handlers completed: `{handlers_completed}`"
+    )
+    return Result.success(response)
+
+
 async def start_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
-    docker_client = event_args.shared_state.get("docker_client")
+    docker_client = _get_docker_client(event_args)
     if docker_client is None:
         return Result.failure(RuntimeError("Docker client not available"))
 
@@ -44,16 +84,54 @@ async def start_handler(event_args: EventArgs) -> Result[str, BaseException | No
         return Result.failure(exc)
 
 
+async def stop_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
+    docker_client = _get_docker_client(event_args)
+    if docker_client is None:
+        return Result.failure(RuntimeError("Docker client not available"))
+
+    if not event_args.raw_args:
+        return Result.success("Please provide a container name. Usage: /stop <name>")
+
+    target = event_args.raw_args[0]
+    try:
+        container = docker_client.containers.get(target)
+        container.stop()
+        return Result.success(f"🛑 Container `{target}` stopped successfully.")
+    except docker.errors.NotFound:
+        return Result.success(f"❌ Container `{target}` not found.")
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+
 def register_default_actions(engine: ActionEngine) -> None:
     engine.register_handler(
         action_name="status",
-        handler_id="docker.status.containers",
-        callback=status_handler,
+        handler_id="docker.status.collect",
+        callback=status_collect_handler,
         stage=0,
+    )
+    engine.register_handler(
+        action_name="status",
+        handler_id="docker.status.render",
+        callback=status_render_handler,
+        stage=1,
+    )
+    engine.register_handler(
+        action_name="status",
+        handler_id="engine.status.runtime",
+        callback=status_runtime_handler,
+        stage=2,
+        stop_on_failure=False,
     )
     engine.register_handler(
         action_name="start",
         handler_id="docker.start.container",
         callback=start_handler,
+        stage=0,
+    )
+    engine.register_handler(
+        action_name="stop",
+        handler_id="docker.stop.container",
+        callback=stop_handler,
         stage=0,
     )

@@ -1,0 +1,53 @@
+{
+    "actions": {
+        "status": {
+            "stop_on_failure": true,
+            "handlers": [
+                {
+                    "id": "docker.status.collect",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "status_collect_handler",
+                    "stage": 0
+                },
+                {
+                    "id": "docker.status.render",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "status_render_handler",
+                    "stage": 1
+                },
+                {
+                    "id": "engine.status.runtime",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "status_runtime_handler",
+                    "stage": 2,
+                    "stop_on_failure": false
+                }
+            ],
+            "unregister": []
+        },
+        "start": {
+            "stop_on_failure": true,
+            "handlers": [
+                {
+                    "id": "docker.start.container",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "start_handler",
+                    "stage": 0
+                }
+            ],
+            "unregister": []
+        },
+        "stop": {
+            "stop_on_failure": true,
+            "handlers": [
+                {
+                    "id": "docker.stop.container",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "stop_handler",
+                    "stage": 0
+                }
+            ],
+            "unregister": []
+        }
+    }
+}

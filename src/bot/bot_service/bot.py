@@ -90,6 +90,10 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _dispatch_action(update, context, "start")
 
+
+async def stop_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _dispatch_action(update, context, "stop")
+
 def main() -> None:
     if not TOKEN or not ALLOWED_IDS:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_IDS")
@@ -99,6 +103,7 @@ def main() -> None:
     # Register commands
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("start", start_container))
+    app.add_handler(CommandHandler("stop", stop_container))
     
     logging.info("Bot is polling...")
     app.run_polling()
