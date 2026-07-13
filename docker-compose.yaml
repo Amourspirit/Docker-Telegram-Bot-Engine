@@ -1,0 +1,13 @@
+services:
+  telegram-c2-bot:
+    build:
+      context: .
+      dockerfile: ./src/bot/Dockerfile
+    container_name: telegram-c2-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
+      - ALLOWED_TELEGRAM_IDS=${ALLOWED_TELEGRAM_IDS:?Set ALLOWED_TELEGRAM_IDS in .env} # Your Telegram User ID
+    volumes:
+      # macOS Docker Desktop Socket Mapping
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
