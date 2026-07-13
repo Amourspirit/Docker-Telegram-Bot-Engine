@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from bot_service.engine import ActionEngine, ActionPolicy
 from bot_service.event_args import EventArgs
 from bot_service.result import Result
@@ -93,3 +95,31 @@ async def test_unregister_handler_removes_execution() -> None:
     assert Result.is_success(result)
     assert result.data == "one"
     assert call_order == ["one"]
+
+
+async def test_handler_timeout_returns_failure_message() -> None:
+    engine = ActionEngine()
+
+    async def slow_handler(_event_args: EventArgs):
+        await asyncio.sleep(0.05)
+        return Result.success("slow")
+
+    async def final_handler(_event_args: EventArgs):
+        return Result.success("final")
+
+    engine.register_action("status", policy=ActionPolicy(stop_on_failure=True))
+    engine.register_handler("status", "h.slow", slow_handler, stage=0, timeout_seconds=0.001)
+    engine.register_handler("status", "h.final", final_handler, stage=1)
+
+    result = await engine.dispatch(
+        EventArgs(
+            action_name="status",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-timeout-1",
+        )
+    )
+
+    assert Result.is_success(result)
+    assert "timed out" in result.data
+    assert "final" not in result.data

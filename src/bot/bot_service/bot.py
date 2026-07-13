@@ -138,6 +138,24 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await message.reply_text(f"❌ Failed to reload actions: {load_result.error}")
 
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        return
+
+    message = update.message
+    if message is None:
+        return
+
+    lines = ["🤖 **Available Commands**"]
+    for action_name in sorted(action_engine.list_actions()):
+        handlers = action_engine.list_handlers(action_name)
+        handler_count = len(handlers)
+        lines.append(f"/{action_name} - {handler_count} handler(s)")
+
+    lines.append("/reload_actions - Reload host action config")
+    await message.reply_text("\n".join(lines), parse_mode="Markdown")
+
 def main() -> None:
     if not TOKEN or not ALLOWED_IDS:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_IDS")
@@ -151,6 +169,7 @@ def main() -> None:
     app.add_handler(CommandHandler("restart", restart_container))
     app.add_handler(CommandHandler("logs", logs_container))
     app.add_handler(CommandHandler("reload_actions", reload_actions))
+    app.add_handler(CommandHandler("help", help_command))
     
     logging.info("Bot is polling...")
     app.run_polling()

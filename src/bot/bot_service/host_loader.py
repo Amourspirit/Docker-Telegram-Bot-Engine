@@ -45,6 +45,7 @@ def load_actions_from_file(
                 callable_name = handler["callable"]
                 stage = int(handler.get("stage", 0))
                 handler_stop_on_failure = handler.get("stop_on_failure")
+                timeout_seconds = handler.get("timeout_seconds")
 
                 callback = _resolve_callable(module_name, callable_name)
                 engine.register_handler(
@@ -53,6 +54,7 @@ def load_actions_from_file(
                     callback=callback,
                     stage=stage,
                     stop_on_failure=handler_stop_on_failure,
+                    timeout_seconds=timeout_seconds,
                 )
                 total_registered += 1
 

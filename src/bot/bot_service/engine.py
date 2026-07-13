@@ -21,6 +21,7 @@ class RegisteredHandler:
     handler_id: str
     callback: ActionHandler
     stop_on_failure: bool | None = None
+    timeout_seconds: float | None = None
 
 
 @dataclass(slots=True)
@@ -60,6 +61,7 @@ class ActionEngine:
         callback: ActionHandler,
         stage: int = 0,
         stop_on_failure: bool | None = None,
+        timeout_seconds: float | None = None,
     ) -> None:
         self.register_action(action_name)
         registration = self._actions[action_name]
@@ -71,10 +73,16 @@ class ActionEngine:
         if existing is not None:
             existing.callback = callback
             existing.stop_on_failure = stop_on_failure
+            existing.timeout_seconds = timeout_seconds
             return
 
         registration.stages[stage].append(
-            RegisteredHandler(handler_id=handler_id, callback=callback, stop_on_failure=stop_on_failure)
+            RegisteredHandler(
+                handler_id=handler_id,
+                callback=callback,
+                stop_on_failure=stop_on_failure,
+                timeout_seconds=timeout_seconds,
+            )
         )
 
     def unregister_handler(self, action_name: str, handler_id: str) -> None:
@@ -130,7 +138,16 @@ class ActionEngine:
 
     async def _run_handler(self, handler: RegisteredHandler, event_args: EventArgs) -> HandlerReturn:
         try:
-            result = await handler.callback(event_args)
+            if handler.timeout_seconds is None:
+                result = await handler.callback(event_args)
+            else:
+                result = await asyncio.wait_for(handler.callback(event_args), timeout=handler.timeout_seconds)
+        except TimeoutError:
+            return Result.failure(
+                TimeoutError(
+                    f"Handler '{handler.handler_id}' timed out after {handler.timeout_seconds} seconds"
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             return Result.failure(exc)
 
