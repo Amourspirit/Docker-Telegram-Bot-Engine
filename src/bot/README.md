@@ -7,6 +7,9 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - replies to `/status` with the current Docker container list
 - starts a container with `/start <container-name>`
 - stops a container with `/stop <container-name>`
+- restarts a container with `/restart <container-name>`
+- shows logs with `/logs <container-name> [tail]`
+- reloads host action config with `/reload_actions`
 - ignores requests from Telegram users not listed in `ALLOWED_TELEGRAM_IDS`
 - supports an action engine with staged handlers for each command
 
@@ -57,6 +60,9 @@ Open a chat with your bot in Telegram and send:
 ```text
 /status
 /stop <container-name>
+/restart <container-name>
+/logs <container-name> 50
+/reload_actions
 ```
 
 If your Telegram user ID is authorized, the bot should reply with container status.

@@ -40,8 +40,21 @@ action_engine = ActionEngine()
 register_default_actions(action_engine)
 
 HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
+
+
+def _load_host_actions_config() -> Result[int, BaseException]:
+    if not HOST_ACTIONS_CONFIG:
+        return Result.success(0)
+
+    return load_actions_from_file(
+        action_engine,
+        HOST_ACTIONS_CONFIG,
+        replace_configured_actions=True,
+    )
+
+
 if HOST_ACTIONS_CONFIG:
-    load_result = load_actions_from_file(action_engine, HOST_ACTIONS_CONFIG)
+    load_result = _load_host_actions_config()
     if Result.is_success(load_result):
         logging.info(f"Loaded {load_result.data} handlers from {HOST_ACTIONS_CONFIG}")
     else:
@@ -94,6 +107,37 @@ async def start_container(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def stop_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _dispatch_action(update, context, "stop")
 
+
+async def restart_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _dispatch_action(update, context, "restart")
+
+
+async def logs_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _dispatch_action(update, context, "logs")
+
+
+async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        return
+
+    message = update.message
+    if message is None:
+        return
+
+    if not HOST_ACTIONS_CONFIG:
+        await message.reply_text("BOT_ACTIONS_CONFIG is not set.")
+        return
+
+    load_result = _load_host_actions_config()
+    if Result.is_success(load_result):
+        await message.reply_text(
+            f"✅ Reloaded actions from `{HOST_ACTIONS_CONFIG}`. Registered handlers: `{load_result.data}`",
+            parse_mode="Markdown",
+        )
+        return
+
+    await message.reply_text(f"❌ Failed to reload actions: {load_result.error}")
+
 def main() -> None:
     if not TOKEN or not ALLOWED_IDS:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_IDS")
@@ -104,6 +148,9 @@ def main() -> None:
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("start", start_container))
     app.add_handler(CommandHandler("stop", stop_container))
+    app.add_handler(CommandHandler("restart", restart_container))
+    app.add_handler(CommandHandler("logs", logs_container))
+    app.add_handler(CommandHandler("reload_actions", reload_actions))
     
     logging.info("Bot is polling...")
     app.run_polling()

@@ -14,7 +14,11 @@ def _resolve_callable(module_name: str, callable_name: str) -> Any:
     return getattr(module, callable_name)
 
 
-def load_actions_from_file(engine: ActionEngine, config_path: str) -> Result[int, BaseException]:
+def load_actions_from_file(
+    engine: ActionEngine,
+    config_path: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
     """Load and register actions from a host-mounted JSON config file."""
     path = Path(config_path)
     if not path.exists():
@@ -29,6 +33,9 @@ def load_actions_from_file(engine: ActionEngine, config_path: str) -> Result[int
         actions = payload.get("actions", {})
         total_registered = 0
         for action_name, action_config in actions.items():
+            if replace_configured_actions:
+                engine.clear_action(action_name)
+
             stop_on_failure = action_config.get("stop_on_failure", True)
             engine.register_action(action_name, policy=ActionPolicy(stop_on_failure=stop_on_failure))
 

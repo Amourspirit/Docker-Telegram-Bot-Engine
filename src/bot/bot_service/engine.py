@@ -43,6 +43,16 @@ class ActionEngine:
         if policy is not None:
             self._actions[action_name].policy = policy
 
+    def clear_action(self, action_name: str) -> None:
+        if action_name in self._actions:
+            self._actions[action_name] = ActionRegistration()
+
+    def clear_all_actions(self) -> None:
+        self._actions.clear()
+
+    def list_actions(self) -> list[str]:
+        return list(self._actions.keys())
+
     def register_handler(
         self,
         action_name: str,

@@ -103,6 +103,59 @@ async def stop_handler(event_args: EventArgs) -> Result[str, BaseException | Non
         return Result.failure(exc)
 
 
+async def restart_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
+    docker_client = _get_docker_client(event_args)
+    if docker_client is None:
+        return Result.failure(RuntimeError("Docker client not available"))
+
+    if not event_args.raw_args:
+        return Result.success("Please provide a container name. Usage: /restart <name>")
+
+    target = event_args.raw_args[0]
+    try:
+        container = docker_client.containers.get(target)
+        container.restart()
+        return Result.success(f"🔄 Container `{target}` restarted successfully.")
+    except docker.errors.NotFound:
+        return Result.success(f"❌ Container `{target}` not found.")
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+
+async def logs_handler(event_args: EventArgs) -> Result[str, BaseException | None]:
+    docker_client = _get_docker_client(event_args)
+    if docker_client is None:
+        return Result.failure(RuntimeError("Docker client not available"))
+
+    if not event_args.raw_args:
+        return Result.success("Please provide a container name. Usage: /logs <name> [tail]")
+
+    target = event_args.raw_args[0]
+    tail = 100
+    if len(event_args.raw_args) > 1:
+        try:
+            tail = max(1, min(500, int(event_args.raw_args[1])))
+        except ValueError:
+            return Result.success("Tail value must be a number. Usage: /logs <name> [tail]")
+
+    try:
+        container = docker_client.containers.get(target)
+        raw_logs = container.logs(tail=tail)
+        rendered_logs = raw_logs.decode("utf-8", errors="replace").strip()
+        if not rendered_logs:
+            rendered_logs = "(no logs available)"
+
+        response = (
+            f"📜 **Logs for `{target}`** (tail={tail})\n\n"
+            f"```\n{rendered_logs}\n```"
+        )
+        return Result.success(response)
+    except docker.errors.NotFound:
+        return Result.success(f"❌ Container `{target}` not found.")
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+
 def register_default_actions(engine: ActionEngine) -> None:
     engine.register_handler(
         action_name="status",
@@ -133,5 +186,17 @@ def register_default_actions(engine: ActionEngine) -> None:
         action_name="stop",
         handler_id="docker.stop.container",
         callback=stop_handler,
+        stage=0,
+    )
+    engine.register_handler(
+        action_name="restart",
+        handler_id="docker.restart.container",
+        callback=restart_handler,
+        stage=0,
+    )
+    engine.register_handler(
+        action_name="logs",
+        handler_id="docker.logs.container",
+        callback=logs_handler,
         stage=0,
     )

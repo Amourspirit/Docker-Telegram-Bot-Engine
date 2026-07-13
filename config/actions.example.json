@@ -48,6 +48,30 @@
                 }
             ],
             "unregister": []
+        },
+        "restart": {
+            "stop_on_failure": true,
+            "handlers": [
+                {
+                    "id": "docker.restart.container",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "restart_handler",
+                    "stage": 0
+                }
+            ],
+            "unregister": []
+        },
+        "logs": {
+            "stop_on_failure": true,
+            "handlers": [
+                {
+                    "id": "docker.logs.container",
+                    "module": "bot_service.actions.docker_actions",
+                    "callable": "logs_handler",
+                    "stage": 0
+                }
+            ],
+            "unregister": []
         }
     }
 }

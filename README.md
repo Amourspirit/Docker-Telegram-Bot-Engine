@@ -9,6 +9,9 @@ The current implementation uses Telegram polling. That means the container does 
 - Show Docker container status with `/status`
 - Start a container with `/start <container-name>`
 - Stop a container with `/stop <container-name>`
+- Restart a container with `/restart <container-name>`
+- Read container logs with `/logs <container-name> [tail]`
+- Reload host action config with `/reload_actions`
 - Restrict access to specific Telegram user IDs via `ALLOWED_TELEGRAM_IDS`
 - Run as a Docker container with Docker Compose
 - Use an event-driven action engine with host-loaded registrations
@@ -62,6 +65,9 @@ Current commands:
 - `/status` lists all containers and whether they are running
 - `/start <container-name>` starts the named container
 - `/stop <container-name>` stops the named container
+- `/restart <container-name>` restarts the named container
+- `/logs <container-name> [tail]` returns recent container logs
+- `/reload_actions` reloads host action config from `BOT_ACTIONS_CONFIG`
 
 If a Telegram user is not listed in `ALLOWED_TELEGRAM_IDS`, the bot ignores the request.
 
