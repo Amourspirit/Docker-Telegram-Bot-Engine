@@ -52,11 +52,20 @@ HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
 LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT: str | None = None
 
 
+def _resolve_project_root_path(config_path: str) -> Path:
+    path = Path(config_path).expanduser()
+    if path.is_absolute():
+        return path
+
+    project_root = Path(__file__).resolve().parents[3]
+    return (project_root / path).resolve()
+
+
 def _read_host_actions_config_text() -> Result[str, BaseException]:
     if not HOST_ACTIONS_CONFIG:
         return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
 
-    path = Path(HOST_ACTIONS_CONFIG)
+    path = _resolve_project_root_path(HOST_ACTIONS_CONFIG)
     if not path.exists():
         return Result.failure(FileNotFoundError(f"Action config file not found: {HOST_ACTIONS_CONFIG}"))
 
@@ -75,7 +84,8 @@ def _load_host_actions_config_from_text(
     if not HOST_ACTIONS_CONFIG:
         return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
 
-    extension = Path(HOST_ACTIONS_CONFIG).suffix.lower()
+    path = _resolve_project_root_path(HOST_ACTIONS_CONFIG)
+    extension = path.suffix.lower()
     if extension == ".json":
         config_format = "json"
     elif extension in {".yaml", ".yml"}:

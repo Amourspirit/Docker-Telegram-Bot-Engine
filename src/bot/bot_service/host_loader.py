@@ -12,6 +12,15 @@ from bot_service.host_client import build_host_operation_handler
 from bot_service.result import Result
 
 
+def _resolve_project_root_path(config_path: str) -> Path:
+    path = Path(config_path).expanduser()
+    if path.is_absolute():
+        return path
+
+    project_root = Path(__file__).resolve().parents[3]
+    return (project_root / path).resolve()
+
+
 def _resolve_callable(module_name: str, callable_name: str) -> Any:
     module = importlib.import_module(module_name)
     return getattr(module, callable_name)
@@ -148,7 +157,7 @@ def load_actions_from_file(
     replace_configured_actions: bool = False,
 ) -> Result[int, BaseException]:
     """Load and register actions from a host-mounted JSON or YAML config file."""
-    path = Path(config_path)
+    path = _resolve_project_root_path(config_path)
     if not path.exists():
         return Result.failure(FileNotFoundError(f"Action config file not found: {config_path}"))
 
