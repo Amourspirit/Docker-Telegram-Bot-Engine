@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import sys
-import json
 import asyncio
+import json
+import sys
+from pathlib import Path
 
 import pytest
 
+import host_runner.config as config_module
 from host_runner.config import HostOperationDefinition
+from host_runner.config import load_operations_from_file
 from host_runner.config import load_operations_from_text
 from host_runner.server import HostActionRunner
 
@@ -27,6 +30,29 @@ operations:
     assert operations["server.uptime"].command == ["/usr/bin/uptime"]
     assert operations["server.uptime"].timeout_seconds == 5.0
     assert operations["server.uptime"].allow_user_args is False
+
+
+def test_load_operations_from_file_resolves_relative_project_root_path(tmp_path: Path, monkeypatch) -> None:
+    project_root = tmp_path / "telegram-bot"
+    config_dir = project_root / "storage" / "config"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "host-actions.yaml"
+    config_path.write_text(
+        """
+operations:
+  server.uptime:
+    command:
+      - /usr/bin/uptime
+""".strip(),
+        encoding="utf-8",
+    )
+
+    fake_module_path = project_root / "src" / "host-runner" / "host_runner" / "config.py"
+    monkeypatch.setattr(config_module, "__file__", str(fake_module_path))
+
+    loaded = load_operations_from_file(str(config_path.relative_to(project_root)))
+
+    assert loaded["server.uptime"].command == ["/usr/bin/uptime"]
 
 
 @pytest.mark.asyncio

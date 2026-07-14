@@ -15,6 +15,15 @@ class HostOperationDefinition:
     allow_user_args: bool = False
 
 
+def _resolve_config_path(config_path: str) -> Path:
+    path = Path(config_path).expanduser()
+    if path.is_absolute():
+        return path
+
+    project_root = Path(__file__).resolve().parents[3]
+    return (project_root / path).resolve()
+
+
 def _load_operations_from_payload(payload: dict[str, Any]) -> dict[str, HostOperationDefinition]:
     operations = payload.get("operations", {})
     if not isinstance(operations, dict):
@@ -63,7 +72,7 @@ def load_operations_from_text(config_text: str, config_format: str) -> dict[str,
 
 
 def load_operations_from_file(config_path: str) -> dict[str, HostOperationDefinition]:
-    path = Path(config_path)
+    path = _resolve_config_path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Host action config file not found: {config_path}")
 
