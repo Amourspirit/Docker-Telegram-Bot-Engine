@@ -77,3 +77,55 @@ async def test_host_action_client_reports_runner_error(tmp_path) -> None:
         server.close()
         await server.wait_closed()
         socket_path.unlink(missing_ok=True)
+
+
+async def test_host_action_client_round_trips_over_tcp() -> None:
+    async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        request_line = await reader.readline()
+        request_payload = json.loads(request_line.decode("utf-8"))
+        writer.write(
+            json.dumps(
+                {
+                    "ok": True,
+                    "message": f"tcp:{request_payload['operation']}:{request_payload['user_id']}",
+                }
+            ).encode("utf-8")
+            + b"\n"
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(handle_connection, host="127.0.0.1", port=0)
+    host, port = server.sockets[0].getsockname()[:2]
+    try:
+        client = HostActionClient(None, endpoint=f"{host}:{port}")
+        result = await client.invoke(
+            "server.uptime",
+            EventArgs(
+                action_name="server_uptime",
+                user_id=7,
+                raw_args=(),
+                correlation_id="cid-client-3",
+            ),
+        )
+        assert Result.is_success(result)
+        assert result.data == "tcp:server.uptime:7"
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def test_host_action_client_requires_endpoint_or_socket() -> None:
+    client = HostActionClient(None)
+    result = await client.invoke(
+        "server.uptime",
+        EventArgs(
+            action_name="server_uptime",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-client-4",
+        ),
+    )
+    assert Result.is_failure(result)
+    assert "must be set" in str(result.error)

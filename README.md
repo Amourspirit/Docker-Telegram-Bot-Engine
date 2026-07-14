@@ -50,6 +50,7 @@ TELEGRAM_BOT_TOKEN=1234567890:replace-with-your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
 DOCKER_SOCKET_PATH=/var/run/docker.sock
 BOT_ACTIONS_CONFIG=/app/config/actions.json
+BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
 BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 ```
 
@@ -59,7 +60,9 @@ Notes:
 - Multiple Telegram users can be allowed with a comma-separated list, for example `123456789,987654321`.
 - On macOS with Docker Desktop, the default Docker socket mapping in `docker-compose.yaml` is already set up to use `/var/run/docker.sock` unless you override it.
 - `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON or YAML action config. Templates exist at `config/actions.example.json` and `config/actions.example.yaml`.
+- `BOT_HOST_ACTION_ENDPOINT` is optional and enables TCP transport to the host runner using `host:port` (or `tcp://host:port`).
 - `BOT_HOST_ACTION_SOCKET` is optional unless you configure host-backed actions. It should point to the Unix socket created by the host runner inside the container.
+- If both endpoint and socket are set, endpoint is preferred.
 - Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
 - Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
 - Host runner operations are declared separately in `config/host-actions.example.yaml`.
@@ -68,7 +71,7 @@ Notes:
 
 The bot process starts inside the `telegram-c2-bot` container and uses long polling to receive updates from Telegram. It then uses the Docker Python SDK to query or control containers through the mounted Docker socket.
 
-For host-backed actions, the bot sends a small JSON request over a Unix socket to a dedicated host runner process. The runner validates the configured operation and executes an approved host command, then returns the result text to the bot.
+For host-backed actions, the bot sends a small JSON request to a dedicated host runner process over TCP or Unix socket. The runner validates the configured operation and executes an approved host command, then returns the result text to the bot.
 
 Current commands:
 
@@ -108,7 +111,17 @@ View logs:
 docker compose logs -f telegram-c2-bot
 ```
 
-Run the host runner on the host if you want host-backed actions:
+Run the host runner on the host if you want host-backed actions (TCP mode for Docker Desktop macOS):
+
+```sh
+cd src/host-runner
+HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
+HOST_ACTIONS_HOST=0.0.0.0 \
+HOST_ACTIONS_PORT=8787 \
+uv run python main.py
+```
+
+Linux hosts can keep Unix socket mode:
 
 ```sh
 cd src/host-runner

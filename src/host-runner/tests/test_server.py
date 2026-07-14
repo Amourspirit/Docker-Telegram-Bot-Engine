@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import json
+import asyncio
 
 import pytest
 
@@ -108,3 +110,32 @@ async def test_handle_request_reports_timeouts() -> None:
 
     assert response["ok"] is False
     assert "timed out" in response["error"]
+
+
+@pytest.mark.asyncio
+async def test_runner_serves_over_tcp() -> None:
+    runner = HostActionRunner(
+        {
+            "server.uptime": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('up')"],
+                timeout_seconds=1,
+            )
+        }
+    )
+
+    server = await asyncio.start_server(runner._handle_connection, host="127.0.0.1", port=0)
+    host, port = server.sockets[0].getsockname()[:2]
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+        writer.write(
+            json.dumps({"operation": "server.uptime", "raw_args": []}).encode("utf-8") + b"\n"
+        )
+        await writer.drain()
+        response = json.loads((await reader.readline()).decode("utf-8"))
+        writer.close()
+        await writer.wait_closed()
+
+        assert response == {"ok": True, "message": "up"}
+    finally:
+        server.close()
+        await server.wait_closed()

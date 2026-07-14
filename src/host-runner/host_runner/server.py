@@ -41,7 +41,17 @@ class HostActionRunner:
 
         return await self._run_command(command, definition.timeout_seconds)
 
-    async def serve_forever(self, socket_path: str) -> None:
+    async def serve_forever(self, socket_path: str | None = None, host: str | None = None, port: int | None = None) -> None:
+        if host and port is not None:
+            server = await asyncio.start_server(self._handle_connection, host=host, port=port)
+            logger.info("Host action runner listening on tcp://%s:%s", host, port)
+            async with server:
+                await server.serve_forever()
+            return
+
+        if not socket_path:
+            raise ValueError("socket_path is required when HOST_ACTIONS_HOST/HOST_ACTIONS_PORT are not set")
+
         socket_file = Path(socket_path)
         socket_file.parent.mkdir(parents=True, exist_ok=True)
         if socket_file.exists():
@@ -112,12 +122,22 @@ class HostActionRunner:
 async def _async_main() -> None:
     config_path = os.environ.get("HOST_ACTIONS_CONFIG")
     socket_path = os.environ.get("HOST_ACTIONS_SOCKET")
-    if not config_path or not socket_path:
-        raise ValueError("Missing HOST_ACTIONS_CONFIG or HOST_ACTIONS_SOCKET")
+    host = os.environ.get("HOST_ACTIONS_HOST")
+    raw_port = os.environ.get("HOST_ACTIONS_PORT")
+    port = int(raw_port) if raw_port else None
+
+    if not config_path:
+        raise ValueError("Missing HOST_ACTIONS_CONFIG")
+
+    if (host and port is None) or (port is not None and not host):
+        raise ValueError("HOST_ACTIONS_HOST and HOST_ACTIONS_PORT must be set together")
+
+    if not host and not socket_path:
+        raise ValueError("Missing HOST_ACTIONS_SOCKET for Unix socket mode")
 
     operations = load_operations_from_file(config_path)
     runner = HostActionRunner(operations)
-    await runner.serve_forever(socket_path)
+    await runner.serve_forever(socket_path=socket_path, host=host, port=port)
 
 
 def main() -> None:

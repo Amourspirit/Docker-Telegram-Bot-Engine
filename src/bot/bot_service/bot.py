@@ -23,6 +23,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # Environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 HOST_ACTION_SOCKET = os.environ.get("BOT_HOST_ACTION_SOCKET")
+HOST_ACTION_ENDPOINT = os.environ.get("BOT_HOST_ACTION_ENDPOINT")
 RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "help"}
 
 
@@ -41,7 +42,7 @@ ALLOWED_IDS = _parse_allowed_ids(os.environ.get("ALLOWED_TELEGRAM_IDS", ""))
 
 # Initialize Docker client (connects via the mounted socket)
 docker_client = docker.from_env()
-host_action_client = HostActionClient(HOST_ACTION_SOCKET)
+host_action_client = HostActionClient(HOST_ACTION_SOCKET, endpoint=HOST_ACTION_ENDPOINT)
 
 # Initialize action engine and register built-in handlers.
 action_engine = ActionEngine()

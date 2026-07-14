@@ -24,6 +24,7 @@ The service expects these environment variables:
 TELEGRAM_BOT_TOKEN=your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
 BOT_ACTIONS_CONFIG=/app/config/actions.yaml
+BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
 BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 ```
 
@@ -31,7 +32,11 @@ BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 
 `BOT_ACTIONS_CONFIG` is optional. If set, the bot loads extra action registrations from a host-mounted JSON or YAML file.
 
+`BOT_HOST_ACTION_ENDPOINT` is optional. If set, the bot uses TCP transport to the host runner in `host:port` (or `tcp://host:port`) format.
+
 `BOT_HOST_ACTION_SOCKET` is optional unless you use host-backed actions. It should point at the Unix socket exposed by the host runner inside the container.
+
+If both endpoint and socket are set, the bot prefers `BOT_HOST_ACTION_ENDPOINT`.
 
 Example configs are available at `config/actions.example.json` and `config/actions.example.yaml`.
 
@@ -70,7 +75,17 @@ docker compose up -d --build
 docker compose logs -f telegram-c2-bot
 ```
 
-To enable host-backed actions, run the host runner on the host and point it at the shared socket directory. For example:
+To enable host-backed actions on Docker Desktop macOS, run the host runner in TCP mode:
+
+```sh
+cd src/host-runner
+HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
+HOST_ACTIONS_HOST=0.0.0.0 \
+HOST_ACTIONS_PORT=8787 \
+uv run python main.py
+```
+
+For Linux hosts, Unix socket mode remains available:
 
 ```sh
 cd src/host-runner
@@ -97,6 +112,8 @@ Open a chat with your bot in Telegram and send:
 ```
 
 If your Telegram user ID is authorized, the bot should reply with container status.
+
+If `/server_uptime` fails with an error like `Operation not supported` on macOS, switch to TCP mode as shown above.
 
 ## Security Note
 

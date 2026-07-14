@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import urlparse
 from typing import Any, Awaitable, Callable
 
 from bot_service.event_args import EventArgs
@@ -13,20 +14,23 @@ class HostActionError(RuntimeError):
 
 
 class HostActionClient:
-    def __init__(self, socket_path: str | None) -> None:
+    def __init__(self, socket_path: str | None, endpoint: str | None = None) -> None:
         self.socket_path = socket_path
+        self.endpoint = endpoint
 
     async def invoke(
         self,
         operation_name: str,
         event_args: EventArgs,
     ) -> Result[str | None, BaseException]:
-        if not self.socket_path:
-            return Result.failure(ValueError("BOT_HOST_ACTION_SOCKET is not set"))
+        if not self.endpoint and not self.socket_path:
+            return Result.failure(
+                ValueError("BOT_HOST_ACTION_ENDPOINT or BOT_HOST_ACTION_SOCKET must be set")
+            )
 
         writer: asyncio.StreamWriter | None = None
         try:
-            reader, writer = await asyncio.open_unix_connection(self.socket_path)
+            reader, writer = await self._open_connection()
             request_payload = {
                 "operation": operation_name,
                 "action_name": event_args.action_name,
@@ -64,6 +68,30 @@ class HostActionClient:
 
         error_message = response_payload.get("error") or "Host action failed"
         return Result.failure(HostActionError(str(error_message)))
+
+    async def _open_connection(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        if self.endpoint:
+            host, port = _parse_endpoint(self.endpoint)
+            return await asyncio.open_connection(host, port)
+
+        if not self.socket_path:
+            raise ValueError("BOT_HOST_ACTION_SOCKET is not set")
+
+        return await asyncio.open_unix_connection(self.socket_path)
+
+
+def _parse_endpoint(endpoint: str) -> tuple[str, int]:
+    candidate = endpoint.strip()
+    if not candidate:
+        raise ValueError("BOT_HOST_ACTION_ENDPOINT is empty")
+
+    parsed = urlparse(candidate if "://" in candidate else f"tcp://{candidate}")
+    if not parsed.hostname or parsed.port is None:
+        raise ValueError(
+            "BOT_HOST_ACTION_ENDPOINT must be in host:port or tcp://host:port format"
+        )
+
+    return parsed.hostname, parsed.port
 
 
 def build_host_operation_handler(
