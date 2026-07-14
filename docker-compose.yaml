@@ -1,3 +1,5 @@
+name: ${COMPOSE_PROJECT_NAME}
+
 services:
   telegram-c2-bot:
     build:
@@ -15,6 +17,6 @@ services:
       # macOS Docker Desktop Socket Mapping
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
       # Host action and runner configuration
-      - ./config:/app/config:ro
+      - ${CONFIG_PATH?Set CONFIG_PATH in .env}:/app/config:ro
       # Shared directory for the host runner Unix socket
       - ./tmp:/var/run/telegram-bot
