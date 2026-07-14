@@ -12,6 +12,8 @@ from bot_service.actions import register_default_actions
 from bot_service.engine import ActionEngine
 from bot_service.event_args import EventArgs
 from bot_service.host_loader import load_actions_from_json
+from bot_service.presentation import build_action_info_text
+from bot_service.presentation import build_help_text
 from bot_service.result import Result
 
 # Configure logging
@@ -206,29 +208,7 @@ async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text(f"Action '{action_name}' is not registered.")
         return
 
-    policy = details["policy"]
-    stages = details["stages"]
-
-    lines = [f"Action: /{action_name}"]
-    lines.append(f"stop_on_failure: {policy['stop_on_failure']}")
-    lines.append(f"default_timeout_seconds: {policy['default_timeout_seconds']}")
-    lines.append("Stages:")
-
-    for idx, stage in enumerate(stages):
-        if not stage:
-            lines.append(f"  stage {idx}: (no handlers)")
-            continue
-
-        lines.append(f"  stage {idx}:")
-        for handler in stage:
-            lines.append(
-                "    - "
-                f"{handler['handler_id']} "
-                f"(stop_on_failure={handler['stop_on_failure']}, "
-                f"timeout_seconds={handler['timeout_seconds']})"
-            )
-
-    await message.reply_text("\n".join(lines))
+    await message.reply_text(build_action_info_text(action_name, details))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -239,15 +219,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if message is None:
         return
 
-    lines = ["🤖 **Available Commands**"]
-    for action_name in sorted(action_engine.list_actions()):
-        handlers = action_engine.list_handlers(action_name)
-        handler_count = len(handlers)
-        lines.append(f"/{action_name} - {handler_count} handler(s)")
-
-    lines.append("/reload_actions - Reload host action config")
-    lines.append("/action_info <action> - Show policy and handler stages")
-    await message.reply_text("\n".join(lines), parse_mode="Markdown")
+    action_names = action_engine.list_actions()
+    action_handler_counts = {
+        action_name: len(action_engine.list_handlers(action_name))
+        for action_name in action_names
+    }
+    await message.reply_text(
+        build_help_text(action_names, action_handler_counts),
+        parse_mode="Markdown",
+    )
 
 def main() -> None:
     if not TOKEN or not ALLOWED_IDS:
