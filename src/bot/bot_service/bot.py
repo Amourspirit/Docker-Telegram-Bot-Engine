@@ -1,6 +1,6 @@
 # bot.py
-import os
 import logging
+import os
 import uuid
 from pathlib import Path
 
@@ -18,7 +18,7 @@ from bot_service.presentation import build_help_text
 from bot_service.result import Result
 
 # Configure logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # Environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -128,12 +128,21 @@ def _load_host_actions_config() -> Result[int, BaseException]:
     )
 
 
-if HOST_ACTIONS_CONFIG:
+def _reload_host_actions_with_rollback() -> tuple[Result[int, BaseException], bool]:
     load_result = _load_host_actions_config()
     if Result.is_success(load_result):
-        logging.info(f"Loaded {load_result.data} handlers from {HOST_ACTIONS_CONFIG}")
-    else:
-        logging.error(f"Failed to load action config from {HOST_ACTIONS_CONFIG}: {load_result.error}")
+        return load_result, False
+
+    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT:
+        restore_result = _load_host_actions_config_from_text(
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
+            update_last_known_good=False,
+        )
+        if Result.is_success(restore_result):
+            return restore_result, True
+
+    return Result.failure(load_result.error), False
+
 
 def is_authorized(update: Update) -> bool:
     """Security check to silently ignore unauthorized users."""
@@ -228,26 +237,21 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("BOT_ACTIONS_CONFIG is not set.")
         return
 
-    load_result = _load_host_actions_config()
-    if Result.is_success(load_result):
-        await message.reply_text(
-            f"✅ Reloaded actions from `{HOST_ACTIONS_CONFIG}`. Registered handlers: `{load_result.data}`",
-            parse_mode="Markdown",
-        )
-        return
-
-    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT:
-        restore_result = _load_host_actions_config_from_text(
-            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
-            update_last_known_good=False,
-        )
-        if Result.is_success(restore_result):
+    reload_result, restored = _reload_host_actions_with_rollback()
+    if Result.is_success(reload_result):
+        if restored:
             await message.reply_text(
                 "⚠️ Reload failed. Restored last known good action configuration.",
             )
             return
 
-    await message.reply_text(f"❌ Failed to reload actions: {load_result.error}")
+        await message.reply_text(
+            f"✅ Reloaded actions from `{HOST_ACTIONS_CONFIG}`. Registered handlers: `{reload_result.data}`",
+            parse_mode="Markdown",
+        )
+        return
+
+    await message.reply_text(f"❌ Failed to reload actions: {reload_result.error}")
 
 
 async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -289,20 +293,38 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         parse_mode="Markdown",
     )
 
+
 def main() -> None:
     if not TOKEN or not ALLOWED_IDS:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_IDS")
-        
+
+    if HOST_ACTIONS_CONFIG:
+        reload_result, restored = _reload_host_actions_with_rollback()
+        if Result.is_success(reload_result):
+            if restored:
+                logging.warning(
+                    "Startup reload failed. Restored last known good action configuration from memory."
+                )
+            else:
+                logging.info(
+                    "Reloaded actions at startup from %s. Registered handlers: %s",
+                    HOST_ACTIONS_CONFIG,
+                    reload_result.data,
+                )
+        else:
+            logging.error("Failed to reload actions at startup: %s", reload_result.error)
+
     app = ApplicationBuilder().token(TOKEN).build()
-    
+
     # Register commands
     app.add_handler(CommandHandler("reload_actions", reload_actions))
     app.add_handler(CommandHandler("action_info", action_info))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.COMMAND, dispatch_action_command))
-    
+
     logging.info("Bot is polling...")
     app.run_polling()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
