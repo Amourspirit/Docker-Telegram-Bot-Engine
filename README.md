@@ -56,7 +56,7 @@ Notes:
 - `ALLOWED_TELEGRAM_IDS` must contain numeric Telegram user IDs, not usernames.
 - Multiple Telegram users can be allowed with a comma-separated list, for example `123456789,987654321`.
 - On macOS with Docker Desktop, the default Docker socket mapping in `docker-compose.yaml` is already set up to use `/var/run/docker.sock` unless you override it.
-- `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON action config. A template exists at `config/actions.example.json`.
+- `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON or YAML action config. Templates exist at `config/actions.example.json` and `config/actions.example.yaml`.
 - Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
 - Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
 

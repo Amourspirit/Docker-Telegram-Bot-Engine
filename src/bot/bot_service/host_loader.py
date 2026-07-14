@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from bot_service.engine import ActionEngine, ActionPolicy
 from bot_service.result import Result
 
@@ -82,12 +84,57 @@ def load_actions_from_json(
     )
 
 
+def load_actions_from_yaml(
+    engine: ActionEngine,
+    config_yaml: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    try:
+        payload = yaml.safe_load(config_yaml)
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return Result.failure(ValueError("Action config must be a mapping with an 'actions' key"))
+
+    return _load_actions_from_payload(
+        engine,
+        payload,
+        replace_configured_actions=replace_configured_actions,
+    )
+
+
+def load_actions_from_text(
+    engine: ActionEngine,
+    config_text: str,
+    config_format: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    normalized = config_format.strip().lower()
+    if normalized == "json":
+        return load_actions_from_json(
+            engine,
+            config_text,
+            replace_configured_actions=replace_configured_actions,
+        )
+    if normalized in {"yaml", "yml"}:
+        return load_actions_from_yaml(
+            engine,
+            config_text,
+            replace_configured_actions=replace_configured_actions,
+        )
+
+    return Result.failure(ValueError(f"Unsupported action config format: {config_format}"))
+
+
 def load_actions_from_file(
     engine: ActionEngine,
     config_path: str,
     replace_configured_actions: bool = False,
 ) -> Result[int, BaseException]:
-    """Load and register actions from a host-mounted JSON config file."""
+    """Load and register actions from a host-mounted JSON or YAML config file."""
     path = Path(config_path)
     if not path.exists():
         return Result.failure(FileNotFoundError(f"Action config file not found: {config_path}"))
@@ -97,8 +144,21 @@ def load_actions_from_file(
     except Exception as exc:  # noqa: BLE001
         return Result.failure(exc)
 
-    return load_actions_from_json(
+    extension = path.suffix.lower()
+    if extension == ".json":
+        config_format = "json"
+    elif extension in {".yaml", ".yml"}:
+        config_format = "yaml"
+    else:
+        return Result.failure(
+            ValueError(
+                "Unsupported action config file extension. Use .json, .yaml, or .yml"
+            )
+        )
+
+    return load_actions_from_text(
         engine,
         config_json,
+        config_format=config_format,
         replace_configured_actions=replace_configured_actions,
     )

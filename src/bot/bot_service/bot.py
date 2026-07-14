@@ -11,7 +11,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from bot_service.actions import register_default_actions
 from bot_service.engine import ActionEngine
 from bot_service.event_args import EventArgs
-from bot_service.host_loader import load_actions_from_json
+from bot_service.host_loader import load_actions_from_text
 from bot_service.presentation import build_action_info_text
 from bot_service.presentation import build_help_text
 from bot_service.result import Result
@@ -44,10 +44,10 @@ action_engine = ActionEngine()
 register_default_actions(action_engine)
 
 HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
-LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON: str | None = None
+LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT: str | None = None
 
 
-def _read_host_actions_config_json() -> Result[str, BaseException]:
+def _read_host_actions_config_text() -> Result[str, BaseException]:
     if not HOST_ACTIONS_CONFIG:
         return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
 
@@ -61,20 +61,34 @@ def _read_host_actions_config_json() -> Result[str, BaseException]:
         return Result.failure(exc)
 
 
-def _load_host_actions_config_from_json(
-    config_json: str,
+def _load_host_actions_config_from_text(
+    config_text: str,
     update_last_known_good: bool,
 ) -> Result[int, BaseException]:
-    global LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON
+    global LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT
 
-    result = load_actions_from_json(
+    if not HOST_ACTIONS_CONFIG:
+        return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
+
+    extension = Path(HOST_ACTIONS_CONFIG).suffix.lower()
+    if extension == ".json":
+        config_format = "json"
+    elif extension in {".yaml", ".yml"}:
+        config_format = "yaml"
+    else:
+        return Result.failure(
+            ValueError("Unsupported BOT_ACTIONS_CONFIG extension. Use .json, .yaml, or .yml")
+        )
+
+    result = load_actions_from_text(
         action_engine,
-        config_json,
+        config_text,
+        config_format=config_format,
         replace_configured_actions=True,
     )
 
     if Result.is_success(result) and update_last_known_good:
-        LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON = config_json
+        LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT = config_text
 
     return result
 
@@ -83,12 +97,12 @@ def _load_host_actions_config() -> Result[int, BaseException]:
     if not HOST_ACTIONS_CONFIG:
         return Result.success(0)
 
-    json_result = _read_host_actions_config_json()
-    if Result.is_failure(json_result):
-        return Result.failure(json_result.error)
+    text_result = _read_host_actions_config_text()
+    if Result.is_failure(text_result):
+        return Result.failure(text_result.error)
 
-    return _load_host_actions_config_from_json(
-        json_result.data,
+    return _load_host_actions_config_from_text(
+        text_result.data,
         update_last_known_good=True,
     )
 
@@ -176,9 +190,9 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON:
-        restore_result = _load_host_actions_config_from_json(
-            LAST_KNOWN_GOOD_ACTIONS_CONFIG_JSON,
+    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT:
+        restore_result = _load_host_actions_config_from_text(
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
             update_last_known_good=False,
         )
         if Result.is_success(restore_result):

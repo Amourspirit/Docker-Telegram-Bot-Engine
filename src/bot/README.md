@@ -22,14 +22,14 @@ The service expects these environment variables:
 ```env
 TELEGRAM_BOT_TOKEN=your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
-BOT_ACTIONS_CONFIG=/app/config/actions.json
+BOT_ACTIONS_CONFIG=/app/config/actions.yaml
 ```
 
 `ALLOWED_TELEGRAM_IDS` should contain numeric Telegram user IDs, separated by commas if you want to allow more than one user.
 
-`BOT_ACTIONS_CONFIG` is optional. If set, the bot loads extra action registrations from a host-mounted JSON file.
+`BOT_ACTIONS_CONFIG` is optional. If set, the bot loads extra action registrations from a host-mounted JSON or YAML file.
 
-An example config is available at `config/actions.example.json`.
+Example configs are available at `config/actions.example.json` and `config/actions.example.yaml`.
 
 Each action can define `default_timeout_seconds`, and each handler entry can override with `timeout_seconds`.
 
