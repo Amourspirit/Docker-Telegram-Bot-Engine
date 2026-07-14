@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import importlib
+import json
+from pathlib import Path
+from typing import Any
+
+from bot_service.engine import ActionEngine, ActionPolicy
+from bot_service.result import Result
+
+
+def _resolve_callable(module_name: str, callable_name: str) -> Any:
+    module = importlib.import_module(module_name)
+    return getattr(module, callable_name)
+
+
+def _load_actions_from_payload(
+    engine: ActionEngine,
+    payload: dict[str, Any],
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    snapshot = engine.snapshot_state()
+    try:
+        actions = payload.get("actions", {})
+        total_registered = 0
+        for action_name, action_config in actions.items():
+            if replace_configured_actions:
+                engine.clear_action(action_name)
+
+            stop_on_failure = action_config.get("stop_on_failure", True)
+            default_timeout_seconds = action_config.get("default_timeout_seconds")
+            engine.register_action(
+                action_name,
+                policy=ActionPolicy(
+                    stop_on_failure=stop_on_failure,
+                    default_timeout_seconds=default_timeout_seconds,
+                ),
+            )
+
+            for handler in action_config.get("handlers", []):
+                handler_id = handler["id"]
+                module_name = handler["module"]
+                callable_name = handler["callable"]
+                stage = int(handler.get("stage", 0))
+                handler_stop_on_failure = handler.get("stop_on_failure")
+                timeout_seconds = handler.get("timeout_seconds")
+
+                callback = _resolve_callable(module_name, callable_name)
+                engine.register_handler(
+                    action_name=action_name,
+                    handler_id=handler_id,
+                    callback=callback,
+                    stage=stage,
+                    stop_on_failure=handler_stop_on_failure,
+                    timeout_seconds=timeout_seconds,
+                )
+                total_registered += 1
+
+            for handler_id in action_config.get("unregister", []):
+                engine.unregister_handler(action_name=action_name, handler_id=handler_id)
+
+        return Result.success(total_registered)
+    except Exception as exc:  # noqa: BLE001
+        engine.restore_state(snapshot)
+        return Result.failure(exc)
+
+
+def load_actions_from_json(
+    engine: ActionEngine,
+    config_json: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    try:
+        payload = json.loads(config_json)
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    return _load_actions_from_payload(
+        engine,
+        payload,
+        replace_configured_actions=replace_configured_actions,
+    )
+
+
+def load_actions_from_file(
+    engine: ActionEngine,
+    config_path: str,
+    replace_configured_actions: bool = False,
+) -> Result[int, BaseException]:
+    """Load and register actions from a host-mounted JSON config file."""
+    path = Path(config_path)
+    if not path.exists():
+        return Result.failure(FileNotFoundError(f"Action config file not found: {config_path}"))
+
+    try:
+        config_json = path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    return load_actions_from_json(
+        engine,
+        config_json,
+        replace_configured_actions=replace_configured_actions,
+    )

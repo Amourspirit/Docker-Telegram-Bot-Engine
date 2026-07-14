@@ -6,7 +6,14 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 
 - replies to `/status` with the current Docker container list
 - starts a container with `/start <container-name>`
+- stops a container with `/stop <container-name>`
+- restarts a container with `/restart <container-name>`
+- shows logs with `/logs <container-name> [tail]`
+- lists available commands with `/help`
+- shows action details with `/action_info <action_name>`
+- reloads host action config with `/reload_actions`
 - ignores requests from Telegram users not listed in `ALLOWED_TELEGRAM_IDS`
+- supports an action engine with staged handlers for each command
 
 ## Configuration
 
@@ -15,9 +22,18 @@ The service expects these environment variables:
 ```env
 TELEGRAM_BOT_TOKEN=your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
+BOT_ACTIONS_CONFIG=/app/config/actions.json
 ```
 
 `ALLOWED_TELEGRAM_IDS` should contain numeric Telegram user IDs, separated by commas if you want to allow more than one user.
+
+`BOT_ACTIONS_CONFIG` is optional. If set, the bot loads extra action registrations from a host-mounted JSON file.
+
+An example config is available at `config/actions.example.json`.
+
+Each action can define `default_timeout_seconds`, and each handler entry can override with `timeout_seconds`.
+
+If `/reload_actions` fails, the bot restores the last known good action configuration snapshot in memory.
 
 ## Runtime
 
@@ -49,6 +65,12 @@ Open a chat with your bot in Telegram and send:
 
 ```text
 /status
+/stop <container-name>
+/restart <container-name>
+/logs <container-name> 50
+/help
+/action_info status
+/reload_actions
 ```
 
 If your Telegram user ID is authorized, the bot should reply with container status.

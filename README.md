@@ -8,8 +8,15 @@ The current implementation uses Telegram polling. That means the container does 
 
 - Show Docker container status with `/status`
 - Start a container with `/start <container-name>`
+- Stop a container with `/stop <container-name>`
+- Restart a container with `/restart <container-name>`
+- Read container logs with `/logs <container-name> [tail]`
+- List available commands with `/help`
+- Inspect action stages with `/action_info <action_name>`
+- Reload host action config with `/reload_actions`
 - Restrict access to specific Telegram user IDs via `ALLOWED_TELEGRAM_IDS`
 - Run as a Docker container with Docker Compose
+- Use an event-driven action engine with host-loaded registrations
 
 ## Project Structure
 
@@ -41,6 +48,7 @@ Create a `.env` file in the project root:
 TELEGRAM_BOT_TOKEN=1234567890:replace-with-your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
 DOCKER_SOCKET_PATH=/var/run/docker.sock
+BOT_ACTIONS_CONFIG=/app/config/actions.json
 ```
 
 Notes:
@@ -48,6 +56,9 @@ Notes:
 - `ALLOWED_TELEGRAM_IDS` must contain numeric Telegram user IDs, not usernames.
 - Multiple Telegram users can be allowed with a comma-separated list, for example `123456789,987654321`.
 - On macOS with Docker Desktop, the default Docker socket mapping in `docker-compose.yaml` is already set up to use `/var/run/docker.sock` unless you override it.
+- `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON action config. A template exists at `config/actions.example.json`.
+- Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
+- Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
 
 ## How It Works
 
@@ -57,6 +68,14 @@ Current commands:
 
 - `/status` lists all containers and whether they are running
 - `/start <container-name>` starts the named container
+- `/stop <container-name>` stops the named container
+- `/restart <container-name>` restarts the named container
+- `/logs <container-name> [tail]` returns recent container logs
+- `/help` shows currently registered actions
+- `/action_info <action_name>` shows policy and staged handlers for one action
+- `/reload_actions` reloads host action config from `BOT_ACTIONS_CONFIG`
+
+If action reload fails, the bot restores the last known good action configuration snapshot in memory.
 
 If a Telegram user is not listed in `ALLOWED_TELEGRAM_IDS`, the bot ignores the request.
 
@@ -133,12 +152,5 @@ Key implementation details:
 - Runtime mode: polling via `app.run_polling()`
 
 ## Future Improvements
-
-Useful next commands for this bot would be:
-
-- `/stop <container-name>`
-- `/restart <container-name>`
-- `/logs <container-name>`
-- `/help`
 
 If you later switch to a webhook-based deployment behind Cloudflare Tunnel or another reverse proxy, you would need to add an inbound HTTP listener and expose an internal application port such as `8080`.
