@@ -6,11 +6,12 @@ from pathlib import Path
 
 import docker
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot_service.actions import register_default_actions
 from bot_service.engine import ActionEngine
 from bot_service.event_args import EventArgs
+from bot_service.host_client import HostActionClient
 from bot_service.host_loader import load_actions_from_text
 from bot_service.presentation import build_action_info_text
 from bot_service.presentation import build_help_text
@@ -21,6 +22,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # Environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+HOST_ACTION_SOCKET = os.environ.get("BOT_HOST_ACTION_SOCKET")
+RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "help"}
 
 
 def _parse_allowed_ids(raw_ids: str) -> list[int]:
@@ -38,6 +41,7 @@ ALLOWED_IDS = _parse_allowed_ids(os.environ.get("ALLOWED_TELEGRAM_IDS", ""))
 
 # Initialize Docker client (connects via the mounted socket)
 docker_client = docker.from_env()
+host_action_client = HostActionClient(HOST_ACTION_SOCKET)
 
 # Initialize action engine and register built-in handlers.
 action_engine = ActionEngine()
@@ -80,12 +84,28 @@ def _load_host_actions_config_from_text(
             ValueError("Unsupported BOT_ACTIONS_CONFIG extension. Use .json, .yaml, or .yml")
         )
 
+    snapshot = action_engine.snapshot_state()
     result = load_actions_from_text(
         action_engine,
         config_text,
         config_format=config_format,
         replace_configured_actions=True,
     )
+
+    if Result.is_success(result):
+        reserved_conflicts = sorted(
+            action_name
+            for action_name in RESERVED_COMMAND_NAMES
+            if action_engine.describe_action(action_name) is not None
+        )
+        if reserved_conflicts:
+            action_engine.restore_state(snapshot)
+            return Result.failure(
+                ValueError(
+                    "Configured actions cannot use reserved command names: "
+                    + ", ".join(reserved_conflicts)
+                )
+            )
 
     if Result.is_success(result) and update_last_known_good:
         LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT = config_text
@@ -140,7 +160,10 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
         user_id=user.id,
         raw_args=tuple(context.args),
         correlation_id=uuid.uuid4().hex,
-        shared_state={"docker_client": docker_client},
+        shared_state={
+            "docker_client": docker_client,
+            "host_action_client": host_action_client,
+        },
     )
 
     result = await action_engine.dispatch(event_args)
@@ -151,23 +174,45 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
     await message.reply_text(result.data, parse_mode="Markdown")
 
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "status")
+def _parse_message_command(message_text: str) -> tuple[str, tuple[str, ...]] | None:
+    stripped = message_text.strip()
+    if not stripped.startswith("/"):
+        return None
 
-async def start_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "start")
+    segments = stripped.split()
+    if not segments:
+        return None
+
+    command_token = segments[0][1:]
+    if not command_token:
+        return None
+
+    command_name = command_token.split("@", 1)[0]
+    return command_name, tuple(segments[1:])
 
 
-async def stop_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "stop")
+async def dispatch_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        return
 
+    message = update.message
+    if message is None or not message.text:
+        return
 
-async def restart_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "restart")
+    parsed = _parse_message_command(message.text)
+    if parsed is None:
+        return
 
+    action_name, raw_args = parsed
+    if action_name in RESERVED_COMMAND_NAMES:
+        return
 
-async def logs_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "logs")
+    if action_engine.describe_action(action_name) is None:
+        await message.reply_text(f"Action '{action_name}' is not registered.")
+        return
+
+    context.args = list(raw_args)
+    await _dispatch_action(update, context, action_name)
 
 
 async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -250,14 +295,10 @@ def main() -> None:
     app = ApplicationBuilder().token(TOKEN).build()
     
     # Register commands
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("start", start_container))
-    app.add_handler(CommandHandler("stop", stop_container))
-    app.add_handler(CommandHandler("restart", restart_container))
-    app.add_handler(CommandHandler("logs", logs_container))
     app.add_handler(CommandHandler("reload_actions", reload_actions))
     app.add_handler(CommandHandler("action_info", action_info))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.COMMAND, dispatch_action_command))
     
     logging.info("Bot is polling...")
     app.run_polling()
