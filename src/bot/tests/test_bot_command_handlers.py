@@ -49,3 +49,33 @@ async def test_action_info_replies_without_parse_mode(monkeypatch) -> None:
     args, kwargs = reply_text.await_args
     assert "Action: /status" in args[0]
     assert kwargs == {}
+
+
+async def test_help_command_ignores_unauthorized_user(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=999),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.help_command(update, context)
+
+    reply_text.assert_not_awaited()
+
+
+async def test_action_info_ignores_unauthorized_user(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=999),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=["status"])
+
+    await bot.action_info(update, context)
+
+    reply_text.assert_not_awaited()
