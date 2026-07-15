@@ -78,6 +78,19 @@
                 }
             ],
             "unregister": []
+        },
+        "server_uptime": {
+            "stop_on_failure": true,
+            "handlers": [
+                {
+                    "id": "host.server.uptime",
+                    "target": "host",
+                    "operation": "server.uptime",
+                    "stage": 0,
+                    "timeout_seconds": 5
+                }
+            ],
+            "unregister": []
         }
     }
 }

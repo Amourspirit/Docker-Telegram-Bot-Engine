@@ -14,8 +14,9 @@ The current implementation uses Telegram polling. That means the container does 
 - List available commands with `/help`
 - Inspect action stages with `/action_info <action_name>`
 - Reload host action config with `/reload_actions`
+- Run curated host actions such as `/server_uptime` through a local host runner
 - Restrict access to specific Telegram user IDs via `ALLOWED_TELEGRAM_IDS`
-- Run as a Docker container with Docker Compose
+- Run the full stack through the Makefile
 - Use an event-driven action engine with host-loaded registrations
 
 ## Project Structure
@@ -49,6 +50,8 @@ TELEGRAM_BOT_TOKEN=1234567890:replace-with-your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
 DOCKER_SOCKET_PATH=/var/run/docker.sock
 BOT_ACTIONS_CONFIG=/app/config/actions.json
+BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
+BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 ```
 
 Notes:
@@ -57,12 +60,18 @@ Notes:
 - Multiple Telegram users can be allowed with a comma-separated list, for example `123456789,987654321`.
 - On macOS with Docker Desktop, the default Docker socket mapping in `docker-compose.yaml` is already set up to use `/var/run/docker.sock` unless you override it.
 - `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON or YAML action config. Templates exist at `config/actions.example.json` and `config/actions.example.yaml`.
+- `BOT_HOST_ACTION_ENDPOINT` is optional and enables TCP transport to the host runner using `host:port` (or `tcp://host:port`).
+- `BOT_HOST_ACTION_SOCKET` is optional unless you configure host-backed actions. It should point to the Unix socket created by the host runner inside the container.
+- If both endpoint and socket are set, endpoint is preferred.
 - Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
 - Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
+- Host runner operations are declared separately in `config/host-actions.example.yaml`.
 
 ## How It Works
 
 The bot process starts inside the `telegram-c2-bot` container and uses long polling to receive updates from Telegram. It then uses the Docker Python SDK to query or control containers through the mounted Docker socket.
+
+For host-backed actions, the bot sends a small JSON request to a dedicated host runner process over TCP or Unix socket. The runner validates the configured operation and executes an approved host command, then returns the result text to the bot.
 
 Current commands:
 
@@ -74,29 +83,44 @@ Current commands:
 - `/help` shows currently registered actions
 - `/action_info <action_name>` shows policy and staged handlers for one action
 - `/reload_actions` reloads host action config from `BOT_ACTIONS_CONFIG`
+- `/server_uptime` is an example host-backed command when the example configs are enabled
 
 If action reload fails, the bot restores the last known good action configuration snapshot in memory.
 
+Configured actions cannot claim the reserved command names `/help`, `/action_info`, or `/reload_actions`.
+
 If a Telegram user is not listed in `ALLOWED_TELEGRAM_IDS`, the bot ignores the request.
 
-## Run With Docker Compose
+## Run With Make
 
 From the project root:
 
 ```sh
-docker compose up -d --build
+make up
 ```
 
 Check container status:
 
 ```sh
-docker compose ps
+make status
 ```
 
 View logs:
 
 ```sh
-docker compose logs -f telegram-c2-bot
+make logs
+```
+
+Run the host runner on the host if you want host-backed actions (TCP mode for Docker Desktop macOS):
+
+```sh
+make start-host-runner
+```
+
+Linux hosts can keep Unix socket mode:
+
+```sh
+make start-host-runner
 ```
 
 If startup succeeds, the logs should include a line showing that the bot is polling.
@@ -116,7 +140,18 @@ If the bot does not reply:
 - confirm your numeric Telegram ID is in `ALLOWED_TELEGRAM_IDS`
 - confirm the bot container is running
 - confirm the container can reach Telegram on outbound port `443`
-- inspect logs with `docker compose logs -f telegram-c2-bot`
+- inspect logs with `make logs`
+
+## Make Targets
+
+- `make up` starts the host runner and bot container
+- `make down` stops the bot container and host runner
+- `make restart` restarts both services
+- `make logs` tails the bot container logs
+- `make host-runner-logs` tails the host runner log
+- `make status` shows bot container and host runner status
+- `make start-host-runner` starts only the host runner
+- `make stop-host-runner` stops only the host runner
 
 ## No Port Exposure Required
 

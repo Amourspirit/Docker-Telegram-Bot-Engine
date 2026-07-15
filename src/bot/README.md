@@ -9,6 +9,7 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - stops a container with `/stop <container-name>`
 - restarts a container with `/restart <container-name>`
 - shows logs with `/logs <container-name> [tail]`
+- dispatches configured slash commands such as `/server_uptime`
 - lists available commands with `/help`
 - shows action details with `/action_info <action_name>`
 - reloads host action config with `/reload_actions`
@@ -23,17 +24,34 @@ The service expects these environment variables:
 TELEGRAM_BOT_TOKEN=your-bot-token
 ALLOWED_TELEGRAM_IDS=123456789
 BOT_ACTIONS_CONFIG=/app/config/actions.yaml
+BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
+BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 ```
 
 `ALLOWED_TELEGRAM_IDS` should contain numeric Telegram user IDs, separated by commas if you want to allow more than one user.
 
 `BOT_ACTIONS_CONFIG` is optional. If set, the bot loads extra action registrations from a host-mounted JSON or YAML file.
 
+`BOT_HOST_ACTION_ENDPOINT` is optional. If set, the bot uses TCP transport to the host runner in `host:port` (or `tcp://host:port`) format.
+
+`BOT_HOST_ACTION_SOCKET` is optional unless you use host-backed actions. It should point at the Unix socket exposed by the host runner inside the container.
+
+If both endpoint and socket are set, the bot prefers `BOT_HOST_ACTION_ENDPOINT`.
+
 Example configs are available at `config/actions.example.json` and `config/actions.example.yaml`.
+
+The host runner operation template lives at `config/host-actions.example.yaml`.
 
 Each action can define `default_timeout_seconds`, and each handler entry can override with `timeout_seconds`.
 
+Handler entries support two execution targets:
+
+- local handlers use `module` and `callable` and run inside the container
+- host handlers use `target: host` and `operation: <operation-id>` and execute through the host runner
+
 If `/reload_actions` fails, the bot restores the last known good action configuration snapshot in memory.
+
+Configured actions cannot use reserved command names: `/help`, `/action_info`, and `/reload_actions`.
 
 ## Runtime
 
@@ -48,33 +66,95 @@ The container image is built from `src/bot/Dockerfile` and starts with:
 python /app/main.py
 ```
 
-## Local Run
+## Run With Make
 
 From the project root:
 
 ```sh
-docker compose up -d --build
-docker compose logs -f telegram-c2-bot
+make up
 ```
 
-When the service starts correctly, it begins polling Telegram for updates.
+Check container status:
 
-## Test
-
-Open a chat with your bot in Telegram and send:
-
-```text
-/status
-/stop <container-name>
-/restart <container-name>
-/logs <container-name> 50
-/help
-/action_info status
-/reload_actions
+```sh
+make status
 ```
 
-If your Telegram user ID is authorized, the bot should reply with container status.
+View logs:
 
-## Security Note
+```sh
+make logs
+```
 
-This service has access to the host Docker daemon through `/var/run/docker.sock`. Treat it as a privileged admin service and only allow trusted Telegram user IDs.
+Run the host runner when you want host-backed actions:
+
+```sh
+make start-host-runner
+```
+
+If startup succeeds, the logs should include a line showing that the bot is polling.
+
+## Test From Telegram
+
+1. Open Telegram and search for your bot username.
+2. Start a chat with the bot.
+3. Send `/status`.
+4. Confirm that the bot replies with a list of Docker containers.
+5. Send `/start <container-name>` for a stopped test container.
+6. Send `/status` again to confirm the container state changed.
+
+If the bot does not reply:
+
+- confirm `TELEGRAM_BOT_TOKEN` is valid
+- confirm your numeric Telegram ID is in `ALLOWED_TELEGRAM_IDS`
+- confirm the bot container is running
+- confirm the container can reach Telegram on outbound port `443`
+- inspect logs with `make logs`
+
+## Make Targets
+
+- `make up` starts the host runner and bot container
+- `make down` stops the bot container and host runner
+- `make restart` restarts both services
+- `make logs` tails the bot container logs
+- `make host-runner-logs` tails the host runner log
+- `make status` shows bot container and host runner status
+- `make start-host-runner` starts only the host runner
+- `make stop-host-runner` stops only the host runner
+
+## No Port Exposure Required
+
+Because this bot uses polling, no container port needs to be published. Telegram clients do not connect directly to your container. Instead:
+
+1. your Telegram client sends a message to Telegram
+2. Telegram stores the update
+3. the bot polls Telegram for updates
+4. the bot replies through the Telegram Bot API
+
+This is simpler than a webhook deployment and is usually the better fit for a small private admin bot.
+
+## Security Considerations
+
+Mounting the Docker socket gives the bot broad control over the host Docker daemon. Treat this bot as a privileged administrative service.
+
+Minimum recommendations:
+
+- only allow your own Telegram user ID or a very small trusted set
+- use a dedicated bot token
+- do not expose the Docker socket to untrusted workloads
+- review logs for unauthorized access attempts
+- deploy only on hosts where Docker control through Telegram is an acceptable risk
+
+## Development Notes
+
+The Python package for the bot lives under `src/bot/` and is built into the runtime image defined in `src/bot/Dockerfile`.
+
+Key implementation details:
+
+- Telegram integration: `python-telegram-bot`
+- Docker integration: Docker SDK for Python
+- Runtime mode: polling via `app.run_polling()`
+
+## Future Improvements
+
+If you later switch to a webhook-based deployment behind Cloudflare Tunnel or another reverse proxy, you would need to add an inbound HTTP listener and expose an internal application port such as `8080`.

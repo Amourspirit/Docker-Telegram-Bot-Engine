@@ -1,0 +1,6 @@
+operations:
+  server.uptime:
+    command:
+      - /usr/bin/uptime
+    timeout_seconds: 5
+    allow_user_args: false

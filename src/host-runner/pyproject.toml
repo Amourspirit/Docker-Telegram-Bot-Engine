@@ -1,0 +1,14 @@
+[project]
+name = "host-runner"
+version = "0.1.0"
+description = "Host-side action runner for telegram-bot"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6.0.2"]
+
+[dependency-groups]
+dev = ["pytest>=8.3.2", "pytest-asyncio>=0.24.0"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

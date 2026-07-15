@@ -1,26 +1,30 @@
 # bot.py
-import os
 import logging
+import os
 import uuid
 from pathlib import Path
 
 import docker
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot_service.actions import register_default_actions
 from bot_service.engine import ActionEngine
 from bot_service.event_args import EventArgs
+from bot_service.host_client import HostActionClient
 from bot_service.host_loader import load_actions_from_text
 from bot_service.presentation import build_action_info_text
 from bot_service.presentation import build_help_text
 from bot_service.result import Result
 
 # Configure logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # Environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+HOST_ACTION_SOCKET = os.environ.get("BOT_HOST_ACTION_SOCKET")
+HOST_ACTION_ENDPOINT = os.environ.get("BOT_HOST_ACTION_ENDPOINT")
+RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "help"}
 
 
 def _parse_allowed_ids(raw_ids: str) -> list[int]:
@@ -38,6 +42,7 @@ ALLOWED_IDS = _parse_allowed_ids(os.environ.get("ALLOWED_TELEGRAM_IDS", ""))
 
 # Initialize Docker client (connects via the mounted socket)
 docker_client = docker.from_env()
+host_action_client = HostActionClient(HOST_ACTION_SOCKET, endpoint=HOST_ACTION_ENDPOINT)
 
 # Initialize action engine and register built-in handlers.
 action_engine = ActionEngine()
@@ -47,11 +52,20 @@ HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
 LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT: str | None = None
 
 
+def _resolve_project_root_path(config_path: str) -> Path:
+    path = Path(config_path).expanduser()
+    if path.is_absolute():
+        return path
+
+    project_root = Path(__file__).resolve().parents[3]
+    return (project_root / path).resolve()
+
+
 def _read_host_actions_config_text() -> Result[str, BaseException]:
     if not HOST_ACTIONS_CONFIG:
         return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
 
-    path = Path(HOST_ACTIONS_CONFIG)
+    path = _resolve_project_root_path(HOST_ACTIONS_CONFIG)
     if not path.exists():
         return Result.failure(FileNotFoundError(f"Action config file not found: {HOST_ACTIONS_CONFIG}"))
 
@@ -70,7 +84,8 @@ def _load_host_actions_config_from_text(
     if not HOST_ACTIONS_CONFIG:
         return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
 
-    extension = Path(HOST_ACTIONS_CONFIG).suffix.lower()
+    path = _resolve_project_root_path(HOST_ACTIONS_CONFIG)
+    extension = path.suffix.lower()
     if extension == ".json":
         config_format = "json"
     elif extension in {".yaml", ".yml"}:
@@ -80,12 +95,28 @@ def _load_host_actions_config_from_text(
             ValueError("Unsupported BOT_ACTIONS_CONFIG extension. Use .json, .yaml, or .yml")
         )
 
+    snapshot = action_engine.snapshot_state()
     result = load_actions_from_text(
         action_engine,
         config_text,
         config_format=config_format,
         replace_configured_actions=True,
     )
+
+    if Result.is_success(result):
+        reserved_conflicts = sorted(
+            action_name
+            for action_name in RESERVED_COMMAND_NAMES
+            if action_engine.describe_action(action_name) is not None
+        )
+        if reserved_conflicts:
+            action_engine.restore_state(snapshot)
+            return Result.failure(
+                ValueError(
+                    "Configured actions cannot use reserved command names: "
+                    + ", ".join(reserved_conflicts)
+                )
+            )
 
     if Result.is_success(result) and update_last_known_good:
         LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT = config_text
@@ -107,12 +138,21 @@ def _load_host_actions_config() -> Result[int, BaseException]:
     )
 
 
-if HOST_ACTIONS_CONFIG:
+def _reload_host_actions_with_rollback() -> tuple[Result[int, BaseException], bool]:
     load_result = _load_host_actions_config()
     if Result.is_success(load_result):
-        logging.info(f"Loaded {load_result.data} handlers from {HOST_ACTIONS_CONFIG}")
-    else:
-        logging.error(f"Failed to load action config from {HOST_ACTIONS_CONFIG}: {load_result.error}")
+        return load_result, False
+
+    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT:
+        restore_result = _load_host_actions_config_from_text(
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
+            update_last_known_good=False,
+        )
+        if Result.is_success(restore_result):
+            return restore_result, True
+
+    return Result.failure(load_result.error), False
+
 
 def is_authorized(update: Update) -> bool:
     """Security check to silently ignore unauthorized users."""
@@ -140,7 +180,10 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
         user_id=user.id,
         raw_args=tuple(context.args),
         correlation_id=uuid.uuid4().hex,
-        shared_state={"docker_client": docker_client},
+        shared_state={
+            "docker_client": docker_client,
+            "host_action_client": host_action_client,
+        },
     )
 
     result = await action_engine.dispatch(event_args)
@@ -151,23 +194,45 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
     await message.reply_text(result.data, parse_mode="Markdown")
 
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "status")
+def _parse_message_command(message_text: str) -> tuple[str, tuple[str, ...]] | None:
+    stripped = message_text.strip()
+    if not stripped.startswith("/"):
+        return None
 
-async def start_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "start")
+    segments = stripped.split()
+    if not segments:
+        return None
+
+    command_token = segments[0][1:]
+    if not command_token:
+        return None
+
+    command_name = command_token.split("@", 1)[0]
+    return command_name, tuple(segments[1:])
 
 
-async def stop_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "stop")
+async def dispatch_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        return
 
+    message = update.message
+    if message is None or not message.text:
+        return
 
-async def restart_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "restart")
+    parsed = _parse_message_command(message.text)
+    if parsed is None:
+        return
 
+    action_name, raw_args = parsed
+    if action_name in RESERVED_COMMAND_NAMES:
+        return
 
-async def logs_container(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _dispatch_action(update, context, "logs")
+    if action_engine.describe_action(action_name) is None:
+        await message.reply_text(f"Action '{action_name}' is not registered.")
+        return
+
+    context.args = list(raw_args)
+    await _dispatch_action(update, context, action_name)
 
 
 async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -182,26 +247,21 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("BOT_ACTIONS_CONFIG is not set.")
         return
 
-    load_result = _load_host_actions_config()
-    if Result.is_success(load_result):
-        await message.reply_text(
-            f"✅ Reloaded actions from `{HOST_ACTIONS_CONFIG}`. Registered handlers: `{load_result.data}`",
-            parse_mode="Markdown",
-        )
-        return
-
-    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT:
-        restore_result = _load_host_actions_config_from_text(
-            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
-            update_last_known_good=False,
-        )
-        if Result.is_success(restore_result):
+    reload_result, restored = _reload_host_actions_with_rollback()
+    if Result.is_success(reload_result):
+        if restored:
             await message.reply_text(
                 "⚠️ Reload failed. Restored last known good action configuration.",
             )
             return
 
-    await message.reply_text(f"❌ Failed to reload actions: {load_result.error}")
+        await message.reply_text(
+            f"✅ Reloaded actions from `{HOST_ACTIONS_CONFIG}`. Registered handlers: `{reload_result.data}`",
+            parse_mode="Markdown",
+        )
+        return
+
+    await message.reply_text(f"❌ Failed to reload actions: {reload_result.error}")
 
 
 async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -243,24 +303,38 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         parse_mode="Markdown",
     )
 
+
 def main() -> None:
     if not TOKEN or not ALLOWED_IDS:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_IDS")
-        
+
+    if HOST_ACTIONS_CONFIG:
+        reload_result, restored = _reload_host_actions_with_rollback()
+        if Result.is_success(reload_result):
+            if restored:
+                logging.warning(
+                    "Startup reload failed. Restored last known good action configuration from memory."
+                )
+            else:
+                logging.info(
+                    "Reloaded actions at startup from %s. Registered handlers: %s",
+                    HOST_ACTIONS_CONFIG,
+                    reload_result.data,
+                )
+        else:
+            logging.error("Failed to reload actions at startup: %s", reload_result.error)
+
     app = ApplicationBuilder().token(TOKEN).build()
-    
+
     # Register commands
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("start", start_container))
-    app.add_handler(CommandHandler("stop", stop_container))
-    app.add_handler(CommandHandler("restart", restart_container))
-    app.add_handler(CommandHandler("logs", logs_container))
     app.add_handler(CommandHandler("reload_actions", reload_actions))
     app.add_handler(CommandHandler("action_info", action_info))
     app.add_handler(CommandHandler("help", help_command))
-    
+    app.add_handler(MessageHandler(filters.COMMAND, dispatch_action_command))
+
     logging.info("Bot is polling...")
     app.run_polling()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
