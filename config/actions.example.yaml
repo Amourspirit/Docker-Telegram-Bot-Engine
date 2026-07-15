@@ -11,6 +11,9 @@ actions:
     allowed_roles:
       - admin
       - operator
+    tags:
+      - docker
+      - util
     handlers:
       - id: docker.status.collect
         module: bot_service.actions.docker_actions
@@ -97,6 +100,9 @@ actions:
     allowed_roles:
       - admin
       - operator
+    tags:
+      - cloudflare
+      - route
     handlers:
       - id: host.server.generic_url
         target: host

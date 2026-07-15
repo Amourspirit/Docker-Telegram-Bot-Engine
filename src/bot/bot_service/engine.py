@@ -16,6 +16,7 @@ class ActionPolicy:
     stop_on_failure: bool = True
     default_timeout_seconds: float | None = None
     allowed_roles: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -70,6 +71,7 @@ class ActionEngine:
                 stop_on_failure=registration.policy.stop_on_failure,
                 default_timeout_seconds=registration.policy.default_timeout_seconds,
                 allowed_roles=registration.policy.allowed_roles,
+                tags=registration.policy.tags,
             )
             cloned_stages: list[list[RegisteredHandler]] = []
             for stage in registration.stages:
@@ -218,6 +220,36 @@ class ActionEngine:
     def list_actions(self) -> list[str]:
         return list(self._actions.keys())
 
+    def get_action_tags(self, action_name: str) -> tuple[str, ...]:
+        resolved_action_name = self.resolve_action_name(action_name)
+        registration = self._actions.get(resolved_action_name) if resolved_action_name is not None else None
+        if registration is None:
+            return ()
+
+        return registration.policy.tags
+
+    def list_actions_by_tags(self, tags: tuple[str, ...] | list[str]) -> list[str]:
+        normalized_tags = {
+            tag.strip().lower()
+            for tag in tags
+            if isinstance(tag, str) and tag.strip()
+        }
+        if not normalized_tags:
+            return []
+
+        return [
+            action_name
+            for action_name, registration in self._actions.items()
+            if normalized_tags.intersection(registration.policy.tags)
+        ]
+
+    def list_untagged_actions(self) -> list[str]:
+        return [
+            action_name
+            for action_name, registration in self._actions.items()
+            if not registration.policy.tags
+        ]
+
     def register_handler(
         self,
         action_name: str,
@@ -296,6 +328,7 @@ class ActionEngine:
                 "stop_on_failure": registration.policy.stop_on_failure,
                 "default_timeout_seconds": registration.policy.default_timeout_seconds,
                 "allowed_roles": list(registration.policy.allowed_roles),
+                "tags": list(registration.policy.tags),
             },
             "stages": stages,
         }

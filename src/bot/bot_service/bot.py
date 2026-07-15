@@ -24,7 +24,8 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 HOST_ACTION_SOCKET = os.environ.get("BOT_HOST_ACTION_SOCKET")
 HOST_ACTION_ENDPOINT = os.environ.get("BOT_HOST_ACTION_ENDPOINT")
-RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "help"}
+RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "actions_by_tag", "help"}
+RESERVED_UNTAGGED_FILTERS = {"none", "unknown"}
 ADMIN_ROLE = "admin"
 
 # Initialize Docker client (connects via the mounted socket)
@@ -210,6 +211,16 @@ def _parse_message_command(message_text: str) -> tuple[str, tuple[str, ...]] | N
     return command_name, tuple(segments[1:])
 
 
+def _normalize_requested_tags(raw_tags: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for raw_tag in raw_tags:
+        clean = raw_tag.strip().lower()
+        if clean and clean not in normalized:
+            normalized.append(clean)
+
+    return tuple(normalized)
+
+
 async def dispatch_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update):
         return
@@ -292,6 +303,60 @@ async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await message.reply_text(build_action_info_text(resolved_action_name or action_name, details))
 
 
+async def actions_by_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update):
+        return
+
+    message = update.message
+    if message is None:
+        return
+
+    requested_tags = _normalize_requested_tags(context.args)
+    if not requested_tags:
+        await message.reply_text("Usage: /actions_by_tag <tag> [<tag> ...]")
+        return
+
+    if RESERVED_UNTAGGED_FILTERS.intersection(requested_tags):
+        action_names = action_engine.list_untagged_actions()
+        summary_line = "Showing untagged actions. Reserved filters: none, unknown"
+    else:
+        action_names = action_engine.list_actions_by_tags(requested_tags)
+        summary_line = "Showing actions matching any tag: " + ", ".join(requested_tags)
+
+    action_handler_counts = {
+        action_name: len(action_engine.list_handlers(action_name))
+        for action_name in action_names
+    }
+    action_aliases = {
+        action_name: action_engine.get_action_aliases(action_name)
+        for action_name in action_names
+    }
+    action_tags = {
+        action_name: action_engine.get_action_tags(action_name)
+        for action_name in action_names
+    }
+
+    if not action_names:
+        if RESERVED_UNTAGGED_FILTERS.intersection(requested_tags):
+            await message.reply_text("No untagged actions are registered.")
+            return
+
+        await message.reply_text("No actions matched the requested tags.")
+        return
+
+    await message.reply_text(
+        build_help_text(
+            action_names,
+            action_handler_counts,
+            action_aliases,
+            action_tags,
+            heading="🏷️ Actions By Tag",
+            summary_line=summary_line,
+            include_admin_commands=False,
+        )
+    )
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update):
         return
@@ -309,8 +374,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         action_name: action_engine.get_action_aliases(action_name)
         for action_name in action_names
     }
+    action_tags = {
+        action_name: action_engine.get_action_tags(action_name)
+        for action_name in action_names
+    }
     await message.reply_text(
-        build_help_text(action_names, action_handler_counts, action_aliases),
+        build_help_text(action_names, action_handler_counts, action_aliases, action_tags),
     )
 
 
@@ -339,6 +408,7 @@ def main() -> None:
     # Register commands
     app.add_handler(CommandHandler("reload_actions", reload_actions))
     app.add_handler(CommandHandler("action_info", action_info))
+    app.add_handler(CommandHandler("actions_by_tag", actions_by_tag))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.COMMAND, dispatch_action_command))
 

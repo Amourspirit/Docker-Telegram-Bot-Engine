@@ -100,6 +100,27 @@ def _normalize_aliases(raw_aliases: Any, field_name: str) -> tuple[str, ...]:
     return tuple(normalized)
 
 
+def _normalize_tags(raw_tags: Any, field_name: str) -> tuple[str, ...]:
+    if raw_tags is None:
+        return ()
+
+    if not isinstance(raw_tags, list):
+        raise ValueError(f"{field_name} must be a list of tag names")
+
+    normalized: list[str] = []
+    for tag in raw_tags:
+        if not isinstance(tag, str):
+            raise ValueError(f"{field_name} entries must be strings")
+
+        clean = tag.strip().lower()
+        if not clean:
+            raise ValueError(f"{field_name} cannot contain empty tag names")
+        if clean not in normalized:
+            normalized.append(clean)
+
+    return tuple(normalized)
+
+
 def _parse_users(raw_users: Any) -> dict[int, tuple[str, ...]]:
     if raw_users is None:
         return {}
@@ -160,12 +181,17 @@ def _load_actions_from_payload(
                 action_config.get("aliases"),
                 f"actions[{action_name!r}].aliases",
             )
+            tags = _normalize_tags(
+                action_config.get("tags"),
+                f"actions[{action_name!r}].tags",
+            )
             engine.register_action(
                 action_name,
                 policy=ActionPolicy(
                     stop_on_failure=stop_on_failure,
                     default_timeout_seconds=default_timeout_seconds,
                     allowed_roles=allowed_roles,
+                    tags=tags,
                 ),
             )
             engine.register_aliases(action_name, aliases)

@@ -223,3 +223,30 @@ def test_register_aliases_replaces_previous_aliases() -> None:
     assert engine.get_action_aliases("cf_docker_url") == ("cf_url_docker",)
     assert engine.resolve_action_name("cf_url_docker") == "cf_docker_url"
     assert engine.resolve_action_name("docker_url_cf") is None
+
+
+def test_list_actions_by_tags_and_untagged_actions() -> None:
+    engine = ActionEngine()
+    engine.register_action("status", policy=ActionPolicy(tags=("docker", "util")))
+    engine.register_action("cf_docker_url", policy=ActionPolicy(tags=("cloudflare", "route")))
+    engine.register_action("server_uptime", policy=ActionPolicy())
+
+    assert set(engine.list_actions_by_tags(["docker"])) == {"status"}
+    assert set(engine.list_actions_by_tags(["route", "util"])) == {"status", "cf_docker_url"}
+    assert engine.get_action_tags("status") == ("docker", "util")
+    assert engine.list_untagged_actions() == ["server_uptime"]
+
+
+def test_snapshot_state_preserves_action_tags() -> None:
+    engine = ActionEngine()
+    engine.register_action("status", policy=ActionPolicy(tags=("docker", "util")))
+
+    snapshot = engine.snapshot_state()
+    engine.register_action("status", policy=ActionPolicy(tags=("changed",)))
+
+    engine.restore_state(snapshot)
+
+    assert engine.get_action_tags("status") == ("docker", "util")
+    details = engine.describe_action("status")
+    assert details is not None
+    assert details["policy"]["tags"] == ["docker", "util"]

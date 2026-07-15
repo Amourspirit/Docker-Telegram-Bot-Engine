@@ -68,6 +68,8 @@ down:
 
 restart: down up
 
+reload: down up
+
 logs:
 	@cd "$(PROJECT_ROOT)" && \
 		if [[ -f .env ]]; then set -a; source .env; set +a; fi; \

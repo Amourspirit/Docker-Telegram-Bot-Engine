@@ -485,3 +485,48 @@ actions:
 
     assert Result.is_failure(result)
     assert "Invalid Telegram user ID" in str(result.error)
+
+
+def test_load_actions_from_yaml_normalizes_tags() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
+users:
+  "1":
+    roles:
+      - operator
+actions:
+  status:
+    allowed_roles: [operator]
+    tags:
+      - Docker
+      - util
+      - docker
+    handlers: []
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_success(result)
+    assert engine.get_action_tags("status") == ("docker", "util")
+
+
+def test_load_actions_from_yaml_rejects_invalid_tags() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
+actions:
+  status:
+    allowed_roles: [operator]
+    tags:
+      - ok
+      - 42
+    handlers: []
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_failure(result)
+    assert "tags entries must be strings" in str(result.error)

@@ -11,6 +11,7 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - shows logs with `/logs <container-name> [tail]`
 - dispatches configured slash commands such as `/server_uptime`
 - lists available commands with `/help`
+- lists actions by tag with `/actions_by_tag <tag> [<tag> ...]`
 - shows action details with `/action_info <action_name>`
 - reloads host action config with `/reload_actions`
 - ignores requests from Telegram users not listed in action config `users`
@@ -42,6 +43,14 @@ The host runner operation template lives at `config/host-actions.example.yaml`.
 
 Each action can define `default_timeout_seconds`, and each handler entry can override with `timeout_seconds`.
 
+Each action can also define optional `tags`:
+
+- `tags` must be a list of strings
+- tags are normalized by trimming whitespace and lowercasing
+- `/help` shows tags next to each action when present
+- `/actions_by_tag <tag> [<tag> ...]` matches actions by any supplied tag
+- reserved filters `none` and `unknown` show only actions with no tags assigned
+
 Handler entries support two execution targets:
 
 - local handlers use `module` and `callable` and run inside the container
@@ -63,7 +72,7 @@ Role-based authorization uses `BOT_ACTIONS_CONFIG`:
 - actions without `allowed_roles` are denied by default
 - `/reload_actions` requires `admin` role
 
-Configured actions cannot use reserved command names: `/help`, `/action_info`, and `/reload_actions`.
+Configured actions cannot use reserved command names: `/help`, `/action_info`, `/actions_by_tag`, and `/reload_actions`.
 
 ## Runtime
 

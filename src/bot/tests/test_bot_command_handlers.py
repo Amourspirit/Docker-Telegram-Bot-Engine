@@ -188,6 +188,21 @@ async def test_dynamic_action_command_ignores_reserved_commands(monkeypatch) -> 
     reply_text.assert_not_awaited()
 
 
+async def test_dynamic_action_command_ignores_actions_by_tag_reserved_command(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(text="/actions_by_tag docker", reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=["docker"])
+
+    await bot.dispatch_action_command(update, context)
+
+    reply_text.assert_not_awaited()
+
+
 async def test_reload_actions_requires_admin_role(monkeypatch) -> None:
     bot = _load_bot_module(monkeypatch)
     bot.action_engine.set_user_roles({1: ("operator",)})
@@ -247,6 +262,100 @@ async def test_help_command_shows_aliases(monkeypatch) -> None:
     assert kwargs == {}
 
 
+async def test_help_command_shows_tags(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.register_action(
+        "status",
+        policy=ActionPolicy(allowed_roles=("admin",), tags=("docker", "util")),
+    )
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.help_command(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "tags: docker, util" in args[0]
+    assert kwargs == {}
+
+
+async def test_actions_by_tag_lists_matching_actions(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.register_action(
+        "status",
+        policy=ActionPolicy(allowed_roles=("admin",), tags=("docker", "util")),
+    )
+    bot.action_engine.register_action(
+        "cf_docker_url",
+        policy=ActionPolicy(allowed_roles=("admin",), tags=("cloudflare", "route")),
+    )
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=["route", "docker"])
+
+    await bot.actions_by_tag(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "🏷️ Actions By Tag" in args[0]
+    assert "Showing actions matching any tag: route, docker" in args[0]
+    assert "/status - 3 handler(s) (tags: docker, util)" in args[0]
+    assert "/cf_docker_url - 0 handler(s) (tags: cloudflare, route)" in args[0]
+    assert kwargs == {}
+
+
+async def test_actions_by_tag_supports_reserved_untagged_filters(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.register_action("server_uptime", policy=ActionPolicy(allowed_roles=("admin",)))
+    bot.action_engine.register_action(
+        "status",
+        policy=ActionPolicy(allowed_roles=("admin",), tags=("docker",)),
+    )
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=["unknown", "docker"])
+
+    await bot.actions_by_tag(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "Showing untagged actions" in args[0]
+    assert "/server_uptime - 0 handler(s)" in args[0]
+    assert "/status" not in args[0]
+    assert kwargs == {}
+
+
+async def test_actions_by_tag_requires_arguments(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.actions_by_tag(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert args[0] == "Usage: /actions_by_tag <tag> [<tag> ...]"
+    assert kwargs == {}
+
+
 def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> None:
     config_path = tmp_path / "actions.yaml"
     config_path.write_text("actions: {}", encoding="utf-8")
@@ -292,6 +401,32 @@ def test_reload_rejects_reserved_alias_names(monkeypatch, tmp_path: Path) -> Non
         "      - help\n"
         "    handlers:\n"
         "      - id: host.help.blocked\n"
+        "        target: host\n"
+        "        operation: helper.blocked\n",
+        update_last_known_good=False,
+    )
+
+    assert Result.is_failure(result)
+    assert "reserved command names" in str(result.error)
+
+
+def test_reload_rejects_actions_by_tag_reserved_action_name(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "actions.yaml"
+    config_path.write_text("actions: {}", encoding="utf-8")
+
+    monkeypatch.setenv("BOT_ACTIONS_CONFIG", str(config_path))
+    monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
+    monkeypatch.setattr("docker.from_env", lambda: object())
+
+    import bot_service.bot as bot_module
+
+    bot = importlib.reload(bot_module)
+    bot.action_engine.set_user_roles({1: ("admin",)})
+    result = bot._load_host_actions_config_from_text(
+        "actions:\n"
+        "  actions_by_tag:\n"
+        "    handlers:\n"
+        "      - id: host.actions_by_tag.blocked\n"
         "        target: host\n"
         "        operation: helper.blocked\n",
         update_last_known_good=False,
