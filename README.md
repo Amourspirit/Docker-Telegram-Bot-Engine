@@ -126,7 +126,6 @@ Linux hosts can keep Unix socket mode:
 ```sh
 cd src/host-runner
 HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
-HOST_ACTIONS_SOCKET="$PWD/../../tmp/host-actions.sock" \
 uv run python main.py
 ```
 

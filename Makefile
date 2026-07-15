@@ -9,8 +9,8 @@ HOST_RUNNER_DIR := $(PROJECT_ROOT)src/host-runner
 HOST_ACTIONS_CONFIG ?= $(PROJECT_ROOT)config/host-actions.example.yaml
 HOST_ACTIONS_HOST ?= 0.0.0.0
 HOST_ACTIONS_PORT ?= 8787
-HOST_RUNNER_PID_FILE := $(PROJECT_ROOT)tmp/host-runner.pid
-HOST_RUNNER_LOG := $(PROJECT_ROOT)tmp/host-runner.log
+HOST_RUNNER_PID_FILE := $(PROJECT_ROOT)storage/runner/host-runner.pid
+HOST_RUNNER_LOG := $(PROJECT_ROOT)storage/runner/host-runner.log
 
 .PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status
 
@@ -24,14 +24,14 @@ help:
 	@echo "  make status           Show bot container and host runner status"
 
 up: start-host-runner
-	@mkdir -p "$(PROJECT_ROOT)tmp"
+	@mkdir -p "$(PROJECT_ROOT)storage/runner"
 	@cd "$(PROJECT_ROOT)" && \
 		if [[ -f .env ]]; then set -a; source .env; set +a; fi; \
 		docker compose up -d --build
 	@echo "Bot started. Use 'make logs' to view container logs."
 
 start-host-runner:
-	@mkdir -p "$(PROJECT_ROOT)tmp"
+	@mkdir -p "$(PROJECT_ROOT)storage/runner"
 	@if [[ -f "$(HOST_RUNNER_PID_FILE)" ]] && kill -0 "$$(cat "$(HOST_RUNNER_PID_FILE)")" >/dev/null 2>&1; then \
 		echo "Host runner already running (PID $$(cat "$(HOST_RUNNER_PID_FILE)"))"; \
 	else \
@@ -74,7 +74,7 @@ logs:
 		docker compose logs -f telegram-c2-bot
 
 host-runner-logs:
-	@mkdir -p "$(PROJECT_ROOT)tmp"
+	@mkdir -p "$(PROJECT_ROOT)storage/runner"
 	@touch "$(HOST_RUNNER_LOG)"
 	@tail -f "$(HOST_RUNNER_LOG)"
 

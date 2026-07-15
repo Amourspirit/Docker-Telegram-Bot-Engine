@@ -18,5 +18,3 @@ services:
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
       # Host action and runner configuration
       - ${CONFIG_PATH?Set CONFIG_PATH in .env}:/app/config:ro
-      # Shared directory for the host runner Unix socket
-      - ./tmp:/var/run/telegram-bot
