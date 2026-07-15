@@ -91,11 +91,18 @@ def _load_host_actions_config_from_text(
     )
 
     if Result.is_success(result):
-        reserved_conflicts = sorted(
-            action_name
-            for action_name in RESERVED_COMMAND_NAMES
-            if action_engine.describe_action(action_name) is not None
-        )
+        reserved_conflicts: list[str] = []
+        for reserved_name in sorted(RESERVED_COMMAND_NAMES):
+            resolved_action_name = action_engine.resolve_action_name(reserved_name)
+            if resolved_action_name is None:
+                continue
+
+            if resolved_action_name == reserved_name:
+                reserved_conflicts.append(reserved_name)
+                continue
+
+            reserved_conflicts.append(f"{reserved_name} (alias for {resolved_action_name})")
+
         if reserved_conflicts:
             action_engine.restore_state(snapshot)
             return Result.failure(
@@ -219,12 +226,13 @@ async def dispatch_action_command(update: Update, context: ContextTypes.DEFAULT_
     if action_name in RESERVED_COMMAND_NAMES:
         return
 
-    if action_engine.describe_action(action_name) is None:
+    resolved_action_name = action_engine.resolve_action_name(action_name)
+    if resolved_action_name is None or action_engine.describe_action(resolved_action_name) is None:
         await message.reply_text(f"Action '{action_name}' is not registered.")
         return
 
     context.args = list(raw_args)
-    await _dispatch_action(update, context, action_name)
+    await _dispatch_action(update, context, resolved_action_name)
 
 
 async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -275,12 +283,13 @@ async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     action_name = context.args[0].lstrip("/")
-    details = action_engine.describe_action(action_name)
+    resolved_action_name = action_engine.resolve_action_name(action_name)
+    details = action_engine.describe_action(resolved_action_name or action_name)
     if details is None:
         await message.reply_text(f"Action '{action_name}' is not registered.")
         return
 
-    await message.reply_text(build_action_info_text(action_name, details))
+    await message.reply_text(build_action_info_text(resolved_action_name or action_name, details))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -296,8 +305,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         action_name: len(action_engine.list_handlers(action_name))
         for action_name in action_names
     }
+    action_aliases = {
+        action_name: action_engine.get_action_aliases(action_name)
+        for action_name in action_names
+    }
     await message.reply_text(
-        build_help_text(action_names, action_handler_counts),
+        build_help_text(action_names, action_handler_counts, action_aliases),
         parse_mode="Markdown",
     )
 

@@ -248,6 +248,116 @@ actions:
     assert dispatch_result.data == "host:server.generic_url:1:"
 
 
+async def test_load_actions_from_yaml_registers_aliases() -> None:
+    engine = ActionEngine()
+    load_result = load_actions_from_yaml(
+        engine,
+        """
+users:
+  "1":
+    roles:
+      - operator
+actions:
+  cf_docker_url:
+    aliases:
+      - cf_url_docker
+    allowed_roles:
+      - operator
+    handlers:
+      - id: external.collect
+        module: tests.support_handlers
+        callable: external_status_collect
+        stage: 0
+      - id: external.render
+        module: tests.support_handlers
+        callable: external_status_render
+        stage: 1
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_success(load_result)
+    assert engine.resolve_action_name("cf_url_docker") == "cf_docker_url"
+    assert engine.get_action_aliases("cf_docker_url") == ("cf_url_docker",)
+
+
+def test_load_actions_from_yaml_rejects_alias_collisions() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
+actions:
+  cf_docker_url:
+    aliases:
+      - cf_url_shared
+    allowed_roles: [operator]
+    handlers: []
+  cf_obsidian_url:
+    aliases:
+      - cf_url_shared
+    allowed_roles: [operator]
+    handlers: []
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_failure(result)
+    assert "conflicts with alias" in str(result.error)
+
+
+def test_load_actions_from_yaml_replaces_action_aliases() -> None:
+    engine = ActionEngine()
+    initial_result = load_actions_from_yaml(
+        engine,
+        """
+users:
+  "1":
+    roles:
+      - operator
+actions:
+  cf_docker_url:
+    aliases:
+      - cf_url_docker
+      - docker_url_cf
+    allowed_roles:
+      - operator
+    handlers:
+      - id: external.collect
+        module: tests.support_handlers
+        callable: external_status_collect
+        stage: 0
+""".strip(),
+        replace_configured_actions=True,
+    )
+    assert Result.is_success(initial_result)
+
+    replacement_result = load_actions_from_yaml(
+        engine,
+        """
+users:
+  "1":
+    roles:
+      - operator
+actions:
+  cf_docker_url:
+    aliases:
+      - cf_url_docker
+    allowed_roles:
+      - operator
+    handlers:
+      - id: external.collect
+        module: tests.support_handlers
+        callable: external_status_collect
+        stage: 0
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_success(replacement_result)
+    assert engine.get_action_aliases("cf_docker_url") == ("cf_url_docker",)
+    assert engine.resolve_action_name("docker_url_cf") is None
+
+
 def test_load_actions_from_yaml_rejects_host_handler_params_non_mapping() -> None:
     engine = ActionEngine()
     result = load_actions_from_yaml(

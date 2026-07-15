@@ -92,6 +92,8 @@ actions:
 
   cf_ui_url:
     stop_on_failure: true
+    aliases:
+      - cf_url_ui
     allowed_roles:
       - admin
       - operator

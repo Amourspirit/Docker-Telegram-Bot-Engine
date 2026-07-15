@@ -182,3 +182,44 @@ async def test_dispatch_denies_action_when_no_allowed_roles_configured() -> None
 
     assert Result.is_failure(result)
     assert "denied by default" in str(result.error)
+
+
+async def test_dispatch_resolves_alias_to_registered_action() -> None:
+    engine = ActionEngine()
+    engine.set_user_roles({1: ("operator",)})
+
+    async def handler(_event_args: EventArgs):
+        return Result.success("alias-ok")
+
+    engine.register_action("cf_docker_url", policy=ActionPolicy(allowed_roles=("operator",)))
+    engine.register_aliases("cf_docker_url", ["cf_url_docker"])
+    engine.register_handler("cf_docker_url", "h.alias", handler, stage=0)
+
+    result = await engine.dispatch(
+        EventArgs(
+            action_name="cf_url_docker",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-alias-1",
+        )
+    )
+
+    assert Result.is_success(result)
+    assert result.data == "alias-ok"
+    assert engine.resolve_action_name("cf_url_docker") == "cf_docker_url"
+    assert engine.get_action_aliases("cf_docker_url") == ("cf_url_docker",)
+
+
+def test_register_aliases_replaces_previous_aliases() -> None:
+    engine = ActionEngine()
+    engine.register_action("cf_docker_url")
+    engine.register_aliases("cf_docker_url", ["cf_url_docker", "docker_url_cf"])
+
+    assert engine.resolve_action_name("cf_url_docker") == "cf_docker_url"
+    assert engine.resolve_action_name("docker_url_cf") == "cf_docker_url"
+
+    engine.register_aliases("cf_docker_url", ["cf_url_docker"])
+
+    assert engine.get_action_aliases("cf_docker_url") == ("cf_url_docker",)
+    assert engine.resolve_action_name("cf_url_docker") == "cf_docker_url"
+    assert engine.resolve_action_name("docker_url_cf") is None

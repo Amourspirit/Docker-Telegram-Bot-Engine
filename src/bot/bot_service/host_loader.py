@@ -80,6 +80,26 @@ def _normalize_roles(raw_roles: Any, field_name: str) -> tuple[str, ...]:
     return tuple(normalized)
 
 
+def _normalize_aliases(raw_aliases: Any, field_name: str) -> tuple[str, ...]:
+    if raw_aliases is None:
+        return ()
+
+    if not isinstance(raw_aliases, list):
+        raise ValueError(f"{field_name} must be a list of alias names")
+
+    normalized: list[str] = []
+    for alias in raw_aliases:
+        if not isinstance(alias, str):
+            raise ValueError(f"{field_name} entries must be strings")
+
+        clean = alias.strip()
+        if not clean:
+            raise ValueError(f"{field_name} cannot contain empty alias names")
+        normalized.append(clean)
+
+    return tuple(normalized)
+
+
 def _parse_users(raw_users: Any) -> dict[int, tuple[str, ...]]:
     if raw_users is None:
         return {}
@@ -136,6 +156,10 @@ def _load_actions_from_payload(
                 action_config.get("allowed_roles"),
                 f"actions[{action_name!r}].allowed_roles",
             )
+            aliases = _normalize_aliases(
+                action_config.get("aliases"),
+                f"actions[{action_name!r}].aliases",
+            )
             engine.register_action(
                 action_name,
                 policy=ActionPolicy(
@@ -144,6 +168,7 @@ def _load_actions_from_payload(
                     allowed_roles=allowed_roles,
                 ),
             )
+            engine.register_aliases(action_name, aliases)
 
             for handler in action_config.get("handlers", []):
                 handler_id = handler["id"]
