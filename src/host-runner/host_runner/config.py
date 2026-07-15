@@ -13,6 +13,7 @@ class HostOperationDefinition:
     command: list[str]
     timeout_seconds: float | None = None
     allow_user_args: bool = False
+    allowed_placeholders: tuple[str, ...] = ()
 
 
 def _resolve_config_path(config_path: str) -> Path:
@@ -45,10 +46,28 @@ def _load_operations_from_payload(payload: dict[str, Any]) -> dict[str, HostOper
             timeout_seconds = float(timeout_seconds)
 
         allow_user_args = bool(operation_config.get("allow_user_args", False))
+        raw_allowed_placeholders = operation_config.get("allowed_placeholders", [])
+        if raw_allowed_placeholders is None:
+            raw_allowed_placeholders = []
+        if not isinstance(raw_allowed_placeholders, list):
+            raise ValueError(
+                f"Operation '{operation_name}' allowed_placeholders must be a list of strings"
+            )
+
+        normalized_allowed_placeholders: list[str] = []
+        for placeholder_name in raw_allowed_placeholders:
+            if not isinstance(placeholder_name, str) or not placeholder_name.strip():
+                raise ValueError(
+                    f"Operation '{operation_name}' allowed_placeholders entries must be non-empty strings"
+                )
+            if placeholder_name not in normalized_allowed_placeholders:
+                normalized_allowed_placeholders.append(placeholder_name)
+
         result[operation_name] = HostOperationDefinition(
             command=list(command),
             timeout_seconds=timeout_seconds,
             allow_user_args=allow_user_args,
+            allowed_placeholders=tuple(normalized_allowed_placeholders),
         )
 
     return result

@@ -30,6 +30,25 @@ operations:
     assert operations["server.uptime"].command == ["/usr/bin/uptime"]
     assert operations["server.uptime"].timeout_seconds == 5.0
     assert operations["server.uptime"].allow_user_args is False
+    assert operations["server.uptime"].allowed_placeholders == ()
+
+
+def test_load_operations_from_yaml_parses_allowed_placeholders() -> None:
+    operations = load_operations_from_text(
+        """
+operations:
+  server.generic_url:
+    command:
+      - /bin/bash
+      - -lc
+            - printf '%s\\n' "https://{{domain_var}}"
+    allowed_placeholders:
+      - domain_var
+""".strip(),
+        "yaml",
+    )
+
+    assert operations["server.generic_url"].allowed_placeholders == ("domain_var",)
 
 
 def test_load_operations_from_file_resolves_relative_project_root_path(tmp_path: Path, monkeypatch) -> None:
@@ -136,6 +155,116 @@ async def test_handle_request_reports_timeouts() -> None:
 
     assert response["ok"] is False
     assert "timed out" in response["error"]
+
+
+@pytest.mark.asyncio
+async def test_handle_request_rejects_params_when_operation_does_not_allow_them() -> None:
+    runner = HostActionRunner(
+        {
+            "server.uptime": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('up')"],
+                timeout_seconds=1,
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {
+            "operation": "server.uptime",
+            "raw_args": [],
+            "params": {"domain_var": "CF_SPIRAL_UI_DOMAIN_NAME"},
+        }
+    )
+
+    assert response == {
+        "ok": False,
+        "error": "Operation 'server.uptime' does not allow params",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_request_rejects_unexpected_params() -> None:
+    runner = HostActionRunner(
+        {
+            "server.generic_url": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('ok')"],
+                timeout_seconds=1,
+                allowed_placeholders=("domain_var",),
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {
+            "operation": "server.generic_url",
+            "raw_args": [],
+            "params": {"other_var": "value"},
+        }
+    )
+
+    assert response == {
+        "ok": False,
+        "error": "Operation 'server.generic_url' received unexpected params: other_var",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_request_substitutes_placeholders() -> None:
+    runner = HostActionRunner(
+        {
+            "server.generic_url": HostOperationDefinition(
+                command=[
+                    sys.executable,
+                    "-c",
+                    "import sys; print(sys.argv[1])",
+                    "https://{{domain_var}}",
+                ],
+                timeout_seconds=1,
+                allowed_placeholders=("domain_var",),
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {
+            "operation": "server.generic_url",
+            "raw_args": [],
+            "params": {"domain_var": "example.com"},
+        }
+    )
+
+    assert response == {"ok": True, "message": "https://example.com"}
+
+
+@pytest.mark.asyncio
+async def test_handle_request_rejects_unresolved_placeholders() -> None:
+    runner = HostActionRunner(
+        {
+            "server.generic_url": HostOperationDefinition(
+                command=[
+                    sys.executable,
+                    "-c",
+                    "print('ok')",
+                    "https://{{domain_var}}",
+                ],
+                timeout_seconds=1,
+                allowed_placeholders=("domain_var",),
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {
+            "operation": "server.generic_url",
+            "raw_args": [],
+            "params": {},
+        }
+    )
+
+    assert response == {
+        "ok": False,
+        "error": "Operation 'server.generic_url' has unresolved placeholders: domain_var",
+    }
 
 
 @pytest.mark.asyncio

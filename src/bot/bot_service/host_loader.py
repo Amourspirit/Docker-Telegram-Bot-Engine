@@ -26,6 +26,25 @@ def _resolve_callable(module_name: str, callable_name: str) -> Any:
     return getattr(module, callable_name)
 
 
+def _normalize_handler_params(handler: dict[str, Any]) -> dict[str, str] | None:
+    raw_params = handler.get("params")
+    if raw_params is None:
+        return None
+
+    if not isinstance(raw_params, dict):
+        raise ValueError("host handler params must be a mapping of string keys to string values")
+
+    normalized: dict[str, str] = {}
+    for raw_key, raw_value in raw_params.items():
+        if not isinstance(raw_key, str) or not raw_key.strip():
+            raise ValueError("host handler params keys must be non-empty strings")
+        if not isinstance(raw_value, str):
+            raise ValueError("host handler params values must be strings")
+        normalized[raw_key] = raw_value
+
+    return normalized
+
+
 def _resolve_handler_callback(handler: dict[str, Any]) -> Any:
     target = str(handler.get("target", "local")).strip().lower()
     if target == "local":
@@ -35,7 +54,8 @@ def _resolve_handler_callback(handler: dict[str, Any]) -> Any:
 
     if target == "host":
         operation_name = handler["operation"]
-        return build_host_operation_handler(operation_name)
+        operation_params = _normalize_handler_params(handler)
+        return build_host_operation_handler(operation_name, params=operation_params)
 
     raise ValueError(f"Unsupported handler target: {target}")
 

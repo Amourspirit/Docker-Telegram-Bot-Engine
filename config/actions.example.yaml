@@ -89,3 +89,18 @@ actions:
         stage: 0
         timeout_seconds: 5
     unregister: []
+
+  cf_ui_url:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+      - operator
+    handlers:
+      - id: host.server.generic_url
+        target: host
+        operation: server.generic_url
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: CF_SPIRAL_UI_DOMAIN_NAME
+    unregister: []

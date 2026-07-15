@@ -118,7 +118,7 @@ async def test_dynamic_action_command_uses_host_action_client(monkeypatch) -> No
     bot.action_engine.set_user_roles({1: ("operator",)})
 
     class FakeHostActionClient:
-        async def invoke(self, operation_name, event_args):
+        async def invoke(self, operation_name, event_args, params=None):
             return Result.success(
                 f"host:{operation_name}:{event_args.correlation_id}:{','.join(event_args.raw_args)}"
             )

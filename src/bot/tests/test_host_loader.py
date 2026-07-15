@@ -146,9 +146,17 @@ actions:
 
 async def test_load_actions_from_yaml_registers_host_handlers() -> None:
     class FakeHostActionClient:
-        async def invoke(self, operation_name: str, event_args: EventArgs):
+        async def invoke(
+            self,
+            operation_name: str,
+            event_args: EventArgs,
+            params: dict[str, str] | None = None,
+        ):
+            param_text = ""
+            if params:
+                param_text = ":" + ",".join(f"{key}={value}" for key, value in sorted(params.items()))
             return Result.success(
-                f"host:{operation_name}:{event_args.user_id}:{','.join(event_args.raw_args)}"
+                f"host:{operation_name}:{event_args.user_id}:{','.join(event_args.raw_args)}{param_text}"
             )
 
     engine = ActionEngine()
@@ -186,6 +194,85 @@ actions:
     )
     assert Result.is_success(dispatch_result)
     assert dispatch_result.data == "host:server.uptime:1:now"
+
+
+async def test_load_actions_from_yaml_registers_host_handlers_with_params() -> None:
+    class FakeHostActionClient:
+        async def invoke(
+            self,
+            operation_name: str,
+            event_args: EventArgs,
+            params: dict[str, str] | None = None,
+        ):
+            assert params == {"domain_var": "CF_SPIRAL_UI_DOMAIN_NAME"}
+            return Result.success(
+                f"host:{operation_name}:{event_args.user_id}:{','.join(event_args.raw_args)}"
+            )
+
+    engine = ActionEngine()
+    load_result = load_actions_from_yaml(
+        engine,
+        """
+users:
+  "1":
+    roles:
+      - operator
+actions:
+  cf_ui_url:
+    stop_on_failure: true
+    allowed_roles:
+      - operator
+    handlers:
+      - id: host.server.ui.url
+        target: host
+        operation: server.generic_url
+        params:
+          domain_var: CF_SPIRAL_UI_DOMAIN_NAME
+        stage: 0
+""".strip(),
+        replace_configured_actions=True,
+    )
+    assert Result.is_success(load_result)
+    assert load_result.data == 1
+
+    dispatch_result = await engine.dispatch(
+        EventArgs(
+            action_name="cf_ui_url",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-loader-host-params-1",
+            shared_state={"host_action_client": FakeHostActionClient()},
+        )
+    )
+    assert Result.is_success(dispatch_result)
+    assert dispatch_result.data == "host:server.generic_url:1:"
+
+
+def test_load_actions_from_yaml_rejects_host_handler_params_non_mapping() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
+users:
+  "1":
+    roles:
+      - operator
+actions:
+  cf_ui_url:
+    allowed_roles: [operator]
+    handlers:
+      - id: host.server.ui.url
+        target: host
+        operation: server.generic_url
+        params:
+          - name: domain_var
+            value: CF_SPIRAL_UI_DOMAIN_NAME
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_failure(result)
+    assert "host handler params must be a mapping" in str(result.error)
 
 
 def test_load_actions_from_file_unsupported_extension(tmp_path: Path) -> None:

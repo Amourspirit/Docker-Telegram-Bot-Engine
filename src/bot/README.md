@@ -47,6 +47,12 @@ Handler entries support two execution targets:
 - local handlers use `module` and `callable` and run inside the container
 - host handlers use `target: host` and `operation: <operation-id>` and execute through the host runner
 
+Host handlers can also define static params that are sent to the host runner:
+
+- use `params` as a mapping of string keys to string values
+- example: `params: {domain_var: CF_SPIRAL_UI_DOMAIN_NAME}`
+- list formats such as `- name: ...` are rejected
+
 If `/reload_actions` fails, the bot restores the last known good action configuration snapshot in memory.
 
 Role-based authorization uses `BOT_ACTIONS_CONFIG`:

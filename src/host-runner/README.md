@@ -18,6 +18,25 @@ HOST_ACTIONS_PORT=8787
 
 Operation definitions live in `config/host-actions.example.yaml` at the repository root.
 
+Host operations can opt into static param substitution:
+
+- define `allowed_placeholders` as a list of accepted placeholder names
+- use `{{placeholder_name}}` tokens inside command parts
+- the runner rejects unknown params and unresolved placeholders
+
+Example:
+
+```yaml
+operations:
+ server.generic_url:
+  command:
+   - /bin/bash
+   - -lc
+   - printf '%s\n' "https://{{domain_var}}"
+  allowed_placeholders:
+   - domain_var
+```
+
 ## Run With Make
 
 From the project root:

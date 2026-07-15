@@ -129,3 +129,37 @@ async def test_host_action_client_requires_endpoint_or_socket() -> None:
     )
     assert Result.is_failure(result)
     assert "must be set" in str(result.error)
+
+
+async def test_host_action_client_sends_static_params(tmp_path) -> None:
+    socket_path = Path("/tmp") / f"host-actions-{uuid.uuid4().hex}.sock"
+
+    async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        request_line = await reader.readline()
+        request_payload = json.loads(request_line.decode("utf-8"))
+        assert request_payload["params"] == {"domain_var": "CF_SPIRAL_UI_DOMAIN_NAME"}
+        writer.write(json.dumps({"ok": True, "message": "ok"}).encode("utf-8") + b"\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_unix_server(handle_connection, path=str(socket_path))
+    try:
+        client = HostActionClient(str(socket_path))
+        result = await client.invoke(
+            "server.generic_url",
+            EventArgs(
+                action_name="cf_ui_url",
+                user_id=1,
+                raw_args=(),
+                correlation_id="cid-client-params-1",
+            ),
+            params={"domain_var": "CF_SPIRAL_UI_DOMAIN_NAME"},
+        )
+
+        assert Result.is_success(result)
+        assert result.data == "ok"
+    finally:
+        server.close()
+        await server.wait_closed()
+        socket_path.unlink(missing_ok=True)

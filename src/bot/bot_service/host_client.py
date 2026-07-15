@@ -22,6 +22,7 @@ class HostActionClient:
         self,
         operation_name: str,
         event_args: EventArgs,
+        params: dict[str, str] | None = None,
     ) -> Result[str | None, BaseException]:
         if not self.endpoint and not self.socket_path:
             return Result.failure(
@@ -30,6 +31,15 @@ class HostActionClient:
 
         writer: asyncio.StreamWriter | None = None
         try:
+            if params is not None:
+                if not isinstance(params, dict):
+                    raise ValueError("Host action params must be a mapping")
+                for key, value in params.items():
+                    if not isinstance(key, str) or not key.strip():
+                        raise ValueError("Host action param keys must be non-empty strings")
+                    if not isinstance(value, str):
+                        raise ValueError("Host action param values must be strings")
+
             reader, writer = await self._open_connection()
             request_payload = {
                 "operation": operation_name,
@@ -37,6 +47,7 @@ class HostActionClient:
                 "user_id": event_args.user_id,
                 "raw_args": list(event_args.raw_args),
                 "correlation_id": event_args.correlation_id,
+                "params": params,
             }
             writer.write(json.dumps(request_payload).encode("utf-8") + b"\n")
             await writer.drain()
@@ -96,6 +107,7 @@ def _parse_endpoint(endpoint: str) -> tuple[str, int]:
 
 def build_host_operation_handler(
     operation_name: str,
+    params: dict[str, str] | None = None,
 ) -> Callable[[EventArgs], Awaitable[Result[str | None, BaseException | None]]]:
     async def _handler(event_args: EventArgs) -> Result[str | None, BaseException | None]:
         client = event_args.shared_state.get("host_action_client")
@@ -105,6 +117,6 @@ def build_host_operation_handler(
                 HostActionError("Host action client is not available in event shared_state")
             )
 
-        return await invoke(operation_name, event_args)
+        return await invoke(operation_name, event_args, params=params)
 
     return _handler

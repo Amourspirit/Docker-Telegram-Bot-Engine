@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from host_runner.config import load_operations_from_file
 
 logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 4000
+PLACEHOLDER_PATTERN = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
 
 
 class HostActionRunner:
@@ -32,10 +34,49 @@ class HostActionRunner:
         if not isinstance(raw_args, list) or not all(isinstance(item, str) for item in raw_args):
             return {"ok": False, "error": "raw_args must be a list of strings"}
 
+        params = payload.get("params")
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            return {"ok": False, "error": "params must be a mapping of string keys to string values"}
+
+        normalized_params: dict[str, str] = {}
+        for key, value in params.items():
+            if not isinstance(key, str) or not key.strip():
+                return {"ok": False, "error": "params keys must be non-empty strings"}
+            if not isinstance(value, str):
+                return {"ok": False, "error": "params values must be strings"}
+            normalized_params[key] = value
+
+        allowed_placeholders = set(definition.allowed_placeholders)
+        if normalized_params and not allowed_placeholders:
+            return {
+                "ok": False,
+                "error": f"Operation '{operation_name}' does not allow params",
+            }
+
+        unknown_params = sorted(set(normalized_params.keys()) - allowed_placeholders)
+        if unknown_params:
+            return {
+                "ok": False,
+                "error": (
+                    f"Operation '{operation_name}' received unexpected params: "
+                    + ", ".join(unknown_params)
+                ),
+            }
+
         if raw_args and not definition.allow_user_args:
             return {"ok": False, "error": f"Operation '{operation_name}' does not allow user args"}
 
-        command = list(definition.command)
+        try:
+            command = self._apply_placeholder_substitution(
+                operation_name=operation_name,
+                command=definition.command,
+                params=normalized_params,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
         if definition.allow_user_args:
             command.extend(raw_args)
 
@@ -117,6 +158,34 @@ class HostActionRunner:
             }
 
         return {"ok": True, "message": message}
+
+    def _apply_placeholder_substitution(
+        self,
+        operation_name: str,
+        command: list[str],
+        params: dict[str, str],
+    ) -> list[str]:
+        rendered: list[str] = []
+        unresolved_placeholders: set[str] = set()
+
+        for part in command:
+            replaced = part
+            for key, value in params.items():
+                replaced = replaced.replace(f"{{{{{key}}}}}", value)
+
+            matches = PLACEHOLDER_PATTERN.findall(replaced)
+            if matches:
+                unresolved_placeholders.update(matches)
+
+            rendered.append(replaced)
+
+        if unresolved_placeholders:
+            names = ", ".join(sorted(unresolved_placeholders))
+            raise ValueError(
+                f"Operation '{operation_name}' has unresolved placeholders: {names}"
+            )
+
+        return rendered
 
 
 async def _async_main() -> None:
