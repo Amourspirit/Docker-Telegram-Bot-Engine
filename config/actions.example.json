@@ -1,8 +1,18 @@
 {
+    "user_roles": {
+        "123456789": [
+            "admin",
+            "operator"
+        ]
+    },
     "actions": {
         "status": {
             "stop_on_failure": true,
             "default_timeout_seconds": 5,
+            "allowed_roles": [
+                "admin",
+                "operator"
+            ],
             "handlers": [
                 {
                     "id": "docker.status.collect",
@@ -29,6 +39,9 @@
         },
         "start": {
             "stop_on_failure": true,
+            "allowed_roles": [
+                "admin"
+            ],
             "handlers": [
                 {
                     "id": "docker.start.container",
@@ -42,6 +55,9 @@
         },
         "stop": {
             "stop_on_failure": true,
+            "allowed_roles": [
+                "admin"
+            ],
             "handlers": [
                 {
                     "id": "docker.stop.container",
@@ -55,6 +71,9 @@
         },
         "restart": {
             "stop_on_failure": true,
+            "allowed_roles": [
+                "admin"
+            ],
             "handlers": [
                 {
                     "id": "docker.restart.container",
@@ -68,6 +87,10 @@
         },
         "logs": {
             "stop_on_failure": true,
+            "allowed_roles": [
+                "admin",
+                "operator"
+            ],
             "handlers": [
                 {
                     "id": "docker.logs.container",
@@ -81,6 +104,10 @@
         },
         "server_uptime": {
             "stop_on_failure": true,
+            "allowed_roles": [
+                "admin",
+                "operator"
+            ],
             "handlers": [
                 {
                     "id": "host.server.uptime",

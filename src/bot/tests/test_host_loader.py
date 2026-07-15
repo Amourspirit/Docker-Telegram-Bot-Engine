@@ -17,9 +17,13 @@ async def test_load_actions_from_file_registers_handlers(tmp_path: Path) -> None
     config_path.write_text(
         json.dumps(
             {
+                "user_roles": {
+                    "1": ["operator"],
+                },
                 "actions": {
                     "status": {
                         "stop_on_failure": True,
+                        "allowed_roles": ["operator"],
                         "handlers": [
                             {
                                 "id": "external.collect",
@@ -35,7 +39,7 @@ async def test_load_actions_from_file_registers_handlers(tmp_path: Path) -> None
                             },
                         ],
                     }
-                }
+                },
             }
         ),
         encoding="utf-8",
@@ -71,8 +75,13 @@ async def test_load_actions_from_file_resolves_relative_project_root_path(tmp_pa
     config_path = config_dir / "actions.yaml"
     config_path.write_text(
         """
+user_roles:
+  "1":
+    - operator
 actions:
   status:
+    allowed_roles:
+      - operator
     handlers:
       - id: external.collect
         module: tests.support_handlers
@@ -95,9 +104,14 @@ async def test_load_actions_from_yaml_file_registers_handlers(tmp_path: Path) ->
     config_path = tmp_path / "actions.yaml"
     config_path.write_text(
         """
+user_roles:
+  "1":
+    - operator
 actions:
   status:
     stop_on_failure: true
+    allowed_roles:
+      - operator
     handlers:
       - id: external.collect
         module: tests.support_handlers
@@ -139,9 +153,14 @@ async def test_load_actions_from_yaml_registers_host_handlers() -> None:
     load_result = load_actions_from_yaml(
         engine,
         """
+user_roles:
+  "1":
+    - operator
 actions:
   server_uptime:
     stop_on_failure: true
+    allowed_roles:
+      - operator
     handlers:
       - id: host.server.uptime
         target: host
@@ -181,8 +200,12 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
         engine,
         json.dumps(
             {
+                "user_roles": {
+                    "1": ["operator"],
+                },
                 "actions": {
                     "status": {
+                        "allowed_roles": ["operator"],
                         "handlers": [
                             {
                                 "id": "external.collect",
@@ -198,7 +221,7 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
                             },
                         ],
                     }
-                }
+                },
             }
         ),
         replace_configured_actions=True,
@@ -209,8 +232,12 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
         engine,
         json.dumps(
             {
+                "user_roles": {
+                    "1": ["operator"],
+                },
                 "actions": {
                     "status": {
+                        "allowed_roles": ["operator"],
                         "handlers": [
                             {
                                 "id": "bad.handler",
@@ -220,7 +247,7 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
                             }
                         ],
                     }
-                }
+                },
             }
         ),
         replace_configured_actions=True,
@@ -237,3 +264,23 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
     )
     assert Result.is_success(dispatch_result)
     assert dispatch_result.data == "external=ok"
+
+
+def test_load_actions_from_yaml_rejects_malformed_user_roles() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
+user_roles:
+  abc:
+    - admin
+actions:
+  status:
+    allowed_roles: [admin]
+    handlers: []
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_failure(result)
+    assert "Invalid Telegram user ID" in str(result.error)

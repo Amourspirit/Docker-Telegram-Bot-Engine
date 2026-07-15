@@ -1,7 +1,15 @@
+user_roles:
+  "123456789":
+    - admin
+    - operator
+
 actions:
   status:
     stop_on_failure: true
     default_timeout_seconds: 5
+    allowed_roles:
+      - admin
+      - operator
     handlers:
       - id: docker.status.collect
         module: bot_service.actions.docker_actions
@@ -21,6 +29,8 @@ actions:
 
   start:
     stop_on_failure: true
+    allowed_roles:
+      - admin
     handlers:
       - id: docker.start.container
         module: bot_service.actions.docker_actions
@@ -31,6 +41,8 @@ actions:
 
   stop:
     stop_on_failure: true
+    allowed_roles:
+      - admin
     handlers:
       - id: docker.stop.container
         module: bot_service.actions.docker_actions
@@ -41,6 +53,8 @@ actions:
 
   restart:
     stop_on_failure: true
+    allowed_roles:
+      - admin
     handlers:
       - id: docker.restart.container
         module: bot_service.actions.docker_actions
@@ -51,6 +65,9 @@ actions:
 
   logs:
     stop_on_failure: true
+    allowed_roles:
+      - admin
+      - operator
     handlers:
       - id: docker.logs.container
         module: bot_service.actions.docker_actions
@@ -61,6 +78,9 @@ actions:
 
   server_uptime:
     stop_on_failure: true
+    allowed_roles:
+      - admin
+      - operator
     handlers:
       - id: host.server.uptime
         target: host

@@ -15,6 +15,7 @@ ActionHandler = Callable[[EventArgs], Awaitable[HandlerReturn]]
 class ActionPolicy:
     stop_on_failure: bool = True
     default_timeout_seconds: float | None = None
+    allowed_roles: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -31,11 +32,18 @@ class ActionRegistration:
     stages: list[list[RegisteredHandler]] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class EngineSnapshot:
+    actions: dict[str, ActionRegistration]
+    user_roles: dict[int, tuple[str, ...]]
+
+
 class ActionEngine:
     """Event-driven action dispatcher with staged handler execution."""
 
     def __init__(self) -> None:
         self._actions: dict[str, ActionRegistration] = {}
+        self._user_roles: dict[int, tuple[str, ...]] = {}
 
     def register_action(self, action_name: str, policy: ActionPolicy | None = None) -> None:
         if action_name not in self._actions:
@@ -45,12 +53,13 @@ class ActionEngine:
         if policy is not None:
             self._actions[action_name].policy = policy
 
-    def snapshot_state(self) -> dict[str, ActionRegistration]:
-        snapshot: dict[str, ActionRegistration] = {}
+    def snapshot_state(self) -> EngineSnapshot:
+        snapshot_actions: dict[str, ActionRegistration] = {}
         for action_name, registration in self._actions.items():
             cloned_policy = ActionPolicy(
                 stop_on_failure=registration.policy.stop_on_failure,
                 default_timeout_seconds=registration.policy.default_timeout_seconds,
+                allowed_roles=registration.policy.allowed_roles,
             )
             cloned_stages: list[list[RegisteredHandler]] = []
             for stage in registration.stages:
@@ -65,12 +74,45 @@ class ActionEngine:
                 ]
                 cloned_stages.append(cloned_stage)
 
-            snapshot[action_name] = ActionRegistration(policy=cloned_policy, stages=cloned_stages)
+            snapshot_actions[action_name] = ActionRegistration(policy=cloned_policy, stages=cloned_stages)
 
-        return snapshot
+        snapshot_roles = {user_id: roles for user_id, roles in self._user_roles.items()}
 
-    def restore_state(self, snapshot: dict[str, ActionRegistration]) -> None:
-        self._actions = snapshot
+        return EngineSnapshot(actions=snapshot_actions, user_roles=snapshot_roles)
+
+    def restore_state(self, snapshot: EngineSnapshot) -> None:
+        self._actions = snapshot.actions
+        self._user_roles = snapshot.user_roles
+
+    def set_user_roles(self, user_roles: dict[int, tuple[str, ...]]) -> None:
+        self._user_roles = {user_id: roles for user_id, roles in user_roles.items()}
+
+    def get_user_roles(self, user_id: int) -> tuple[str, ...]:
+        return self._user_roles.get(user_id, ())
+
+    def can_user_execute_action(self, user_id: int, action_name: str) -> Result[None, BaseException]:
+        registration = self._actions.get(action_name)
+        if registration is None:
+            return Result.failure(ValueError(f"No handlers registered for action: {action_name}"))
+
+        allowed_roles = registration.policy.allowed_roles
+        if not allowed_roles:
+            return Result.failure(
+                PermissionError(
+                    f"Action '{action_name}' has no allowed roles configured and is denied by default"
+                )
+            )
+
+        user_roles = set(self.get_user_roles(user_id))
+        if any(role in user_roles for role in allowed_roles):
+            return Result.success(None)
+
+        return Result.failure(
+            PermissionError(
+                f"User {user_id} is not authorized to execute '{action_name}'. "
+                f"Required roles: {', '.join(allowed_roles)}"
+            )
+        )
 
     def clear_action(self, action_name: str) -> None:
         if action_name in self._actions:
@@ -150,6 +192,7 @@ class ActionEngine:
             "policy": {
                 "stop_on_failure": registration.policy.stop_on_failure,
                 "default_timeout_seconds": registration.policy.default_timeout_seconds,
+                "allowed_roles": list(registration.policy.allowed_roles),
             },
             "stages": stages,
         }
@@ -158,6 +201,10 @@ class ActionEngine:
         registration = self._actions.get(event_args.action_name)
         if registration is None or not registration.stages:
             return Result.failure(ValueError(f"No handlers registered for action: {event_args.action_name}"))
+
+        authorization_result = self.can_user_execute_action(event_args.user_id, event_args.action_name)
+        if Result.is_failure(authorization_result):
+            return Result.failure(authorization_result.error)
 
         for stage in registration.stages:
             if event_args.cancelled:

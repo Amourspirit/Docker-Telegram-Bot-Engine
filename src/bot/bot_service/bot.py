@@ -25,6 +25,7 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 HOST_ACTION_SOCKET = os.environ.get("BOT_HOST_ACTION_SOCKET")
 HOST_ACTION_ENDPOINT = os.environ.get("BOT_HOST_ACTION_ENDPOINT")
 RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "help"}
+ADMIN_ROLE = "admin"
 
 
 def _parse_allowed_ids(raw_ids: str) -> list[int]:
@@ -46,6 +47,7 @@ host_action_client = HostActionClient(HOST_ACTION_SOCKET, endpoint=HOST_ACTION_E
 
 # Initialize action engine and register built-in handlers.
 action_engine = ActionEngine()
+action_engine.set_user_roles({user_id: (ADMIN_ROLE,) for user_id in ALLOWED_IDS})
 register_default_actions(action_engine)
 
 HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
@@ -166,6 +168,11 @@ def is_authorized(update: Update) -> bool:
     return result
 
 
+def has_role(user_id: int, role_name: str) -> bool:
+    user_roles = set(action_engine.get_user_roles(user_id))
+    return role_name.strip().lower() in user_roles
+
+
 async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, action_name: str) -> None:
     if not is_authorized(update):
         return
@@ -240,7 +247,13 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     message = update.message
-    if message is None:
+    user = update.effective_user
+    if message is None or user is None:
+        return
+
+    if not has_role(user.id, ADMIN_ROLE):
+        await message.reply_text("❌ You are not allowed to run /reload_actions.")
+        logging.warning("Denied reload_actions for user ID %s due to missing role '%s'", user.id, ADMIN_ROLE)
         return
 
     if not HOST_ACTIONS_CONFIG:

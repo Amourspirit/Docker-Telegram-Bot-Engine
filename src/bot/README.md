@@ -14,6 +14,7 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - shows action details with `/action_info <action_name>`
 - reloads host action config with `/reload_actions`
 - ignores requests from Telegram users not listed in `ALLOWED_TELEGRAM_IDS`
+- applies role-based checks per action from `BOT_ACTIONS_CONFIG`
 - supports an action engine with staged handlers for each command
 
 ## Configuration
@@ -50,6 +51,15 @@ Handler entries support two execution targets:
 - host handlers use `target: host` and `operation: <operation-id>` and execute through the host runner
 
 If `/reload_actions` fails, the bot restores the last known good action configuration snapshot in memory.
+
+Role-based authorization is evaluated after `ALLOWED_TELEGRAM_IDS`:
+
+- `user_roles` maps Telegram user IDs to role names
+- each action must define `allowed_roles`
+- actions without `allowed_roles` are denied by default
+- `/reload_actions` requires `admin` role
+
+If `user_roles` is omitted in config, the bot keeps existing role assignments. On startup, whitelisted users are seeded with `admin` role to avoid lockout before role config is applied.
 
 Configured actions cannot use reserved command names: `/help`, `/action_info`, and `/reload_actions`.
 

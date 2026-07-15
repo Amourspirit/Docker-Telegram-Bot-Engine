@@ -40,6 +40,45 @@ def _resolve_handler_callback(handler: dict[str, Any]) -> Any:
     raise ValueError(f"Unsupported handler target: {target}")
 
 
+def _normalize_roles(raw_roles: Any, field_name: str) -> tuple[str, ...]:
+    if raw_roles is None:
+        return ()
+
+    if not isinstance(raw_roles, list):
+        raise ValueError(f"{field_name} must be a list of role names")
+
+    normalized: list[str] = []
+    for role in raw_roles:
+        if not isinstance(role, str):
+            raise ValueError(f"{field_name} entries must be strings")
+        clean = role.strip().lower()
+        if not clean:
+            raise ValueError(f"{field_name} cannot contain empty role names")
+        if clean not in normalized:
+            normalized.append(clean)
+
+    return tuple(normalized)
+
+
+def _parse_user_roles(raw_user_roles: Any) -> dict[int, tuple[str, ...]]:
+    if raw_user_roles is None:
+        return {}
+
+    if not isinstance(raw_user_roles, dict):
+        raise ValueError("user_roles must be a mapping of Telegram user ID to role list")
+
+    parsed: dict[int, tuple[str, ...]] = {}
+    for raw_user_id, raw_roles in raw_user_roles.items():
+        try:
+            user_id = int(str(raw_user_id).strip())
+        except ValueError as exc:
+            raise ValueError(f"Invalid Telegram user ID in user_roles: {raw_user_id}") from exc
+
+        parsed[user_id] = _normalize_roles(raw_roles, f"user_roles[{raw_user_id!r}]")
+
+    return parsed
+
+
 def _load_actions_from_payload(
     engine: ActionEngine,
     payload: dict[str, Any],
@@ -47,6 +86,9 @@ def _load_actions_from_payload(
 ) -> Result[int, BaseException]:
     snapshot = engine.snapshot_state()
     try:
+        if "user_roles" in payload:
+            engine.set_user_roles(_parse_user_roles(payload.get("user_roles")))
+
         actions = payload.get("actions", {})
         total_registered = 0
         for action_name, action_config in actions.items():
@@ -55,11 +97,16 @@ def _load_actions_from_payload(
 
             stop_on_failure = action_config.get("stop_on_failure", True)
             default_timeout_seconds = action_config.get("default_timeout_seconds")
+            allowed_roles = _normalize_roles(
+                action_config.get("allowed_roles"),
+                f"actions[{action_name!r}].allowed_roles",
+            )
             engine.register_action(
                 action_name,
                 policy=ActionPolicy(
                     stop_on_failure=stop_on_failure,
                     default_timeout_seconds=default_timeout_seconds,
+                    allowed_roles=allowed_roles,
                 ),
             )
 

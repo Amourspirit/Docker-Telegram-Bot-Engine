@@ -9,6 +9,7 @@ from bot_service.result import Result
 
 async def test_dispatch_runs_stages_in_order() -> None:
     engine = ActionEngine()
+    engine.set_user_roles({1: ("operator",)})
     call_order: list[str] = []
 
     async def first(event_args: EventArgs):
@@ -20,6 +21,7 @@ async def test_dispatch_runs_stages_in_order() -> None:
         call_order.append("second")
         return Result.success(f"value={event_args.shared_state['value']}")
 
+    engine.register_action("status", policy=ActionPolicy(allowed_roles=("operator",)))
     engine.register_handler("status", "h.first", first, stage=0)
     engine.register_handler("status", "h.second", second, stage=1)
 
@@ -39,6 +41,7 @@ async def test_dispatch_runs_stages_in_order() -> None:
 
 async def test_dispatch_stops_when_policy_requires() -> None:
     engine = ActionEngine()
+    engine.set_user_roles({1: ("operator",)})
     call_order: list[str] = []
 
     async def failing(_event_args: EventArgs):
@@ -49,7 +52,7 @@ async def test_dispatch_stops_when_policy_requires() -> None:
         call_order.append("should_not_run")
         return Result.success("ok")
 
-    engine.register_action("status", policy=ActionPolicy(stop_on_failure=True))
+    engine.register_action("status", policy=ActionPolicy(stop_on_failure=True, allowed_roles=("operator",)))
     engine.register_handler("status", "h.fail", failing, stage=0)
     engine.register_handler("status", "h.skip", should_not_run, stage=1)
 
@@ -69,6 +72,7 @@ async def test_dispatch_stops_when_policy_requires() -> None:
 
 async def test_unregister_handler_removes_execution() -> None:
     engine = ActionEngine()
+    engine.set_user_roles({1: ("operator",)})
     call_order: list[str] = []
 
     async def one(_event_args: EventArgs):
@@ -79,6 +83,7 @@ async def test_unregister_handler_removes_execution() -> None:
         call_order.append("two")
         return Result.success("two")
 
+    engine.register_action("status", policy=ActionPolicy(allowed_roles=("operator",)))
     engine.register_handler("status", "h.one", one, stage=0)
     engine.register_handler("status", "h.two", two, stage=0)
     engine.unregister_handler("status", "h.two")
@@ -99,6 +104,7 @@ async def test_unregister_handler_removes_execution() -> None:
 
 async def test_handler_timeout_returns_failure_message() -> None:
     engine = ActionEngine()
+    engine.set_user_roles({1: ("operator",)})
 
     async def slow_handler(_event_args: EventArgs):
         await asyncio.sleep(0.05)
@@ -107,7 +113,7 @@ async def test_handler_timeout_returns_failure_message() -> None:
     async def final_handler(_event_args: EventArgs):
         return Result.success("final")
 
-    engine.register_action("status", policy=ActionPolicy(stop_on_failure=True))
+    engine.register_action("status", policy=ActionPolicy(stop_on_failure=True, allowed_roles=("operator",)))
     engine.register_handler("status", "h.slow", slow_handler, stage=0, timeout_seconds=0.001)
     engine.register_handler("status", "h.final", final_handler, stage=1)
 
@@ -127,6 +133,7 @@ async def test_handler_timeout_returns_failure_message() -> None:
 
 async def test_action_default_timeout_applies_when_handler_timeout_is_missing() -> None:
     engine = ActionEngine()
+    engine.set_user_roles({1: ("operator",)})
 
     async def slow_handler(_event_args: EventArgs):
         await asyncio.sleep(0.05)
@@ -134,7 +141,11 @@ async def test_action_default_timeout_applies_when_handler_timeout_is_missing() 
 
     engine.register_action(
         "status",
-        policy=ActionPolicy(stop_on_failure=True, default_timeout_seconds=0.001),
+        policy=ActionPolicy(
+            stop_on_failure=True,
+            default_timeout_seconds=0.001,
+            allowed_roles=("operator",),
+        ),
     )
     engine.register_handler("status", "h.slow", slow_handler, stage=0)
 
@@ -149,3 +160,25 @@ async def test_action_default_timeout_applies_when_handler_timeout_is_missing() 
 
     assert Result.is_success(result)
     assert "timed out" in result.data
+
+
+async def test_dispatch_denies_action_when_no_allowed_roles_configured() -> None:
+    engine = ActionEngine()
+    engine.set_user_roles({1: ("admin",)})
+
+    async def handler(_event_args: EventArgs):
+        return Result.success("ok")
+
+    engine.register_handler("status", "h.one", handler, stage=0)
+
+    result = await engine.dispatch(
+        EventArgs(
+            action_name="status",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-no-roles-1",
+        )
+    )
+
+    assert Result.is_failure(result)
+    assert "denied by default" in str(result.error)

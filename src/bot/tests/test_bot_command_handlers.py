@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+from bot_service.engine import ActionPolicy
 from bot_service.host_client import build_host_operation_handler
 from bot_service.result import Result
 
@@ -88,10 +89,12 @@ async def test_action_info_ignores_unauthorized_user(monkeypatch) -> None:
 
 async def test_dynamic_action_command_dispatches_registered_action(monkeypatch) -> None:
     bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("operator",)})
 
     async def handler(_event_args):
         return Result.success("dynamic-ok")
 
+    bot.action_engine.register_action("server_uptime", policy=ActionPolicy(allowed_roles=("operator",)))
     bot.action_engine.register_handler("server_uptime", "test.dynamic", handler)
 
     reply_text = AsyncMock()
@@ -111,6 +114,7 @@ async def test_dynamic_action_command_dispatches_registered_action(monkeypatch) 
 
 async def test_dynamic_action_command_uses_host_action_client(monkeypatch) -> None:
     bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("operator",)})
 
     class FakeHostActionClient:
         async def invoke(self, operation_name, event_args):
@@ -119,6 +123,7 @@ async def test_dynamic_action_command_uses_host_action_client(monkeypatch) -> No
             )
 
     bot.host_action_client = FakeHostActionClient()
+    bot.action_engine.register_action("server_uptime", policy=ActionPolicy(allowed_roles=("operator",)))
     bot.action_engine.register_handler(
         "server_uptime",
         "host.server.uptime",
@@ -154,6 +159,24 @@ async def test_dynamic_action_command_ignores_reserved_commands(monkeypatch) -> 
     await bot.dispatch_action_command(update, context)
 
     reply_text.assert_not_awaited()
+
+
+async def test_reload_actions_requires_admin_role(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("operator",)})
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.reload_actions(update, context)
+
+    reply_text.assert_awaited_once()
+    args, _kwargs = reply_text.await_args
+    assert "not allowed" in args[0]
 
 
 def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> None:

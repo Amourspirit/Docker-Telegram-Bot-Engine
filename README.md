@@ -16,6 +16,7 @@ The current implementation uses Telegram polling. That means the container does 
 - Reload host action config with `/reload_actions`
 - Run curated host actions such as `/server_uptime` through a local host runner
 - Restrict access to specific Telegram user IDs via `ALLOWED_TELEGRAM_IDS`
+- Restrict each action by roles via `user_roles` and `allowed_roles` in action config
 - Run the full stack through the Makefile
 - Use an event-driven action engine with host-loaded registrations
 
@@ -65,6 +66,10 @@ Notes:
 - If both endpoint and socket are set, endpoint is preferred.
 - Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
 - Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
+- Action config supports role controls:
+  - `user_roles`: map of Telegram user ID to role list
+  - `actions.<name>.allowed_roles`: roles allowed to execute that action
+  - actions without `allowed_roles` are denied by default
 - Host runner operations are declared separately in `config/host-actions.example.yaml`.
 
 ## How It Works
@@ -83,6 +88,7 @@ Current commands:
 - `/help` shows currently registered actions
 - `/action_info <action_name>` shows policy and staged handlers for one action
 - `/reload_actions` reloads host action config from `BOT_ACTIONS_CONFIG`
+- `/reload_actions` requires `admin` role
 - `/server_uptime` is an example host-backed command when the example configs are enabled
 
 If action reload fails, the bot restores the last known good action configuration snapshot in memory.
@@ -90,6 +96,12 @@ If action reload fails, the bot restores the last known good action configuratio
 Configured actions cannot claim the reserved command names `/help`, `/action_info`, or `/reload_actions`.
 
 If a Telegram user is not listed in `ALLOWED_TELEGRAM_IDS`, the bot ignores the request.
+
+Authorization order is:
+
+1. user must be in `ALLOWED_TELEGRAM_IDS`
+2. action must declare `allowed_roles`
+3. user roles from `user_roles` must intersect with action `allowed_roles`
 
 ## Run With Make
 
