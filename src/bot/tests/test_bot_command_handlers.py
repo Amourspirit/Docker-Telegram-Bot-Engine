@@ -22,7 +22,7 @@ def _load_bot_module(monkeypatch):
     return bot
 
 
-async def test_help_command_replies_with_markdown(monkeypatch) -> None:
+async def test_help_command_replies_without_parse_mode(monkeypatch) -> None:
     bot = _load_bot_module(monkeypatch)
 
     reply_text = AsyncMock()
@@ -37,7 +37,7 @@ async def test_help_command_replies_with_markdown(monkeypatch) -> None:
     reply_text.assert_awaited_once()
     args, kwargs = reply_text.await_args
     assert "Available Commands" in args[0]
-    assert kwargs.get("parse_mode") == "Markdown"
+    assert kwargs == {}
 
 
 async def test_action_info_replies_without_parse_mode(monkeypatch) -> None:
@@ -244,7 +244,7 @@ async def test_help_command_shows_aliases(monkeypatch) -> None:
     reply_text.assert_awaited_once()
     args, kwargs = reply_text.await_args
     assert "/cf_docker_url - 0 handler(s) (aliases: /cf_url_docker)" in args[0]
-    assert kwargs.get("parse_mode") == "Markdown"
+    assert kwargs == {}
 
 
 def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> None:

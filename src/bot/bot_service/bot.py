@@ -311,7 +311,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     }
     await message.reply_text(
         build_help_text(action_names, action_handler_counts, action_aliases),
-        parse_mode="Markdown",
     )
 
 

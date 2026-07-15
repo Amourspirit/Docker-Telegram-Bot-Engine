@@ -10,7 +10,7 @@ def test_help_text_contains_actions_and_admin_commands() -> None:
         action_handler_counts={"status": 3, "logs": 1, "restart": 1},
     )
 
-    assert "🤖 **Available Commands**" in text
+    assert "🤖 Available Commands" in text
     assert "/status - 3 handler(s)" in text
     assert "/logs - 1 handler(s)" in text
     assert "/restart - 1 handler(s)" in text

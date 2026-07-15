@@ -6,7 +6,7 @@ def build_help_text(
     action_handler_counts: dict[str, int],
     action_aliases: dict[str, tuple[str, ...]] | None = None,
 ) -> str:
-    lines = ["🤖 **Available Commands**"]
+    lines = ["🤖 Available Commands"]
     action_aliases = action_aliases or {}
     for action_name in sorted(action_names):
         handler_count = action_handler_counts.get(action_name, 0)
