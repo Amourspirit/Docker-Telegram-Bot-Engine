@@ -90,6 +90,9 @@ class ActionEngine:
     def get_user_roles(self, user_id: int) -> tuple[str, ...]:
         return self._user_roles.get(user_id, ())
 
+    def is_known_user(self, user_id: int) -> bool:
+        return user_id in self._user_roles
+
     def can_user_execute_action(self, user_id: int, action_name: str) -> Result[None, BaseException]:
         registration = self._actions.get(action_name)
         if registration is None:

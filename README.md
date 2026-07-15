@@ -15,8 +15,7 @@ The current implementation uses Telegram polling. That means the container does 
 - Inspect action stages with `/action_info <action_name>`
 - Reload host action config with `/reload_actions`
 - Run curated host actions such as `/server_uptime` through a local host runner
-- Restrict access to specific Telegram user IDs via `ALLOWED_TELEGRAM_IDS`
-- Restrict each action by roles via `user_roles` and `allowed_roles` in action config
+- Restrict access and roles via `users` and `allowed_roles` in action config
 - Run the full stack through the Makefile
 - Use an event-driven action engine with host-loaded registrations
 
@@ -48,7 +47,6 @@ Create a `.env` file in the project root:
 
 ```env
 TELEGRAM_BOT_TOKEN=1234567890:replace-with-your-bot-token
-ALLOWED_TELEGRAM_IDS=123456789
 DOCKER_SOCKET_PATH=/var/run/docker.sock
 BOT_ACTIONS_CONFIG=/app/config/actions.json
 BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
@@ -57,8 +55,6 @@ BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 
 Notes:
 
-- `ALLOWED_TELEGRAM_IDS` must contain numeric Telegram user IDs, not usernames.
-- Multiple Telegram users can be allowed with a comma-separated list, for example `123456789,987654321`.
 - On macOS with Docker Desktop, the default Docker socket mapping in `docker-compose.yaml` is already set up to use `/var/run/docker.sock` unless you override it.
 - `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON or YAML action config. Templates exist at `config/actions.example.json` and `config/actions.example.yaml`.
 - `BOT_HOST_ACTION_ENDPOINT` is optional and enables TCP transport to the host runner using `host:port` (or `tcp://host:port`).
@@ -67,7 +63,8 @@ Notes:
 - Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
 - Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
 - Action config supports role controls:
-  - `user_roles`: map of Telegram user ID to role list
+  - `users`: map of Telegram user ID to user configuration
+    - `roles`: list of role names for that user
   - `actions.<name>.allowed_roles`: roles allowed to execute that action
   - actions without `allowed_roles` are denied by default
 - Host runner operations are declared separately in `config/host-actions.example.yaml`.
@@ -95,13 +92,13 @@ If action reload fails, the bot restores the last known good action configuratio
 
 Configured actions cannot claim the reserved command names `/help`, `/action_info`, or `/reload_actions`.
 
-If a Telegram user is not listed in `ALLOWED_TELEGRAM_IDS`, the bot ignores the request.
+If a Telegram user is not listed in `users`, the bot ignores the request.
 
 Authorization order is:
 
-1. user must be in `ALLOWED_TELEGRAM_IDS`
+1. user must be in `users`
 2. action must declare `allowed_roles`
-3. user roles from `user_roles` must intersect with action `allowed_roles`
+3. user roles from `users.<id>.roles` must intersect with action `allowed_roles`
 
 ## Run With Make
 
@@ -149,7 +146,7 @@ If startup succeeds, the logs should include a line showing that the bot is poll
 If the bot does not reply:
 
 - confirm `TELEGRAM_BOT_TOKEN` is valid
-- confirm your numeric Telegram ID is in `ALLOWED_TELEGRAM_IDS`
+- confirm your numeric Telegram ID is present in `users` within `BOT_ACTIONS_CONFIG`
 - confirm the bot container is running
 - confirm the container can reach Telegram on outbound port `443`
 - inspect logs with `make logs`

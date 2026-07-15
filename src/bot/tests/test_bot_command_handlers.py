@@ -11,14 +11,15 @@ from bot_service.result import Result
 
 
 def _load_bot_module(monkeypatch):
-    monkeypatch.setenv("ALLOWED_TELEGRAM_IDS", "1")
     monkeypatch.delenv("BOT_ACTIONS_CONFIG", raising=False)
     monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
     monkeypatch.setattr("docker.from_env", lambda: object())
 
     import bot_service.bot as bot_module
 
-    return importlib.reload(bot_module)
+    bot = importlib.reload(bot_module)
+    bot.action_engine.set_user_roles({1: ("admin",)})
+    return bot
 
 
 async def test_help_command_replies_with_markdown(monkeypatch) -> None:
@@ -180,26 +181,26 @@ async def test_reload_actions_requires_admin_role(monkeypatch) -> None:
 
 
 def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> None:
-        config_path = tmp_path / "actions.yaml"
-        config_path.write_text("actions: {}", encoding="utf-8")
+    config_path = tmp_path / "actions.yaml"
+    config_path.write_text("actions: {}", encoding="utf-8")
 
-        monkeypatch.setenv("ALLOWED_TELEGRAM_IDS", "1")
-        monkeypatch.setenv("BOT_ACTIONS_CONFIG", str(config_path))
-        monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
-        monkeypatch.setattr("docker.from_env", lambda: object())
+    monkeypatch.setenv("BOT_ACTIONS_CONFIG", str(config_path))
+    monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
+    monkeypatch.setattr("docker.from_env", lambda: object())
 
-        import bot_service.bot as bot_module
+    import bot_service.bot as bot_module
 
-        bot = importlib.reload(bot_module)
-        result = bot._load_host_actions_config_from_text(
-                "actions:\n"
-                "  help:\n"
-                "    handlers:\n"
-                "      - id: host.help.blocked\n"
-                "        target: host\n"
-                "        operation: helper.blocked\n",
-                update_last_known_good=False,
-        )
+    bot = importlib.reload(bot_module)
+    bot.action_engine.set_user_roles({1: ("admin",)})
+    result = bot._load_host_actions_config_from_text(
+        "actions:\n"
+        "  help:\n"
+        "    handlers:\n"
+        "      - id: host.help.blocked\n"
+        "        target: host\n"
+        "        operation: helper.blocked\n",
+        update_last_known_good=False,
+    )
 
-        assert Result.is_failure(result)
-        assert "reserved command names" in str(result.error)
+    assert Result.is_failure(result)
+    assert "reserved command names" in str(result.error)

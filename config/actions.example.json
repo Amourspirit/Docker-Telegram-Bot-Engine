@@ -1,9 +1,11 @@
 {
-    "user_roles": {
-        "123456789": [
-            "admin",
-            "operator"
-        ]
+    "users": {
+        "123456789": {
+            "roles": [
+                "admin",
+                "operator"
+            ]
+        }
     },
     "actions": {
         "status": {

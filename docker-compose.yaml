@@ -9,7 +9,6 @@ services:
     restart: unless-stopped
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
-      - ALLOWED_TELEGRAM_IDS=${ALLOWED_TELEGRAM_IDS:?Set ALLOWED_TELEGRAM_IDS in .env} # Your Telegram User ID
       - BOT_ACTIONS_CONFIG=${BOT_ACTIONS_CONFIG:-/app/config/actions.example.yaml}
       - BOT_HOST_ACTION_ENDPOINT=${BOT_HOST_ACTION_ENDPOINT:-host.docker.internal:8787}
       - BOT_HOST_ACTION_SOCKET=${BOT_HOST_ACTION_SOCKET:-/var/run/telegram-bot/host-actions.sock}

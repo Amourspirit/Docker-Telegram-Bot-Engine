@@ -27,27 +27,12 @@ HOST_ACTION_ENDPOINT = os.environ.get("BOT_HOST_ACTION_ENDPOINT")
 RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "help"}
 ADMIN_ROLE = "admin"
 
-
-def _parse_allowed_ids(raw_ids: str) -> list[int]:
-    ids: list[int] = []
-    for raw_id in raw_ids.split(","):
-        clean = raw_id.strip()
-        if not clean:
-            continue
-        ids.append(int(clean))
-    return ids
-
-
-# Comma-separated list of your personal Telegram User IDs (NOT usernames)
-ALLOWED_IDS = _parse_allowed_ids(os.environ.get("ALLOWED_TELEGRAM_IDS", ""))
-
 # Initialize Docker client (connects via the mounted socket)
 docker_client = docker.from_env()
 host_action_client = HostActionClient(HOST_ACTION_SOCKET, endpoint=HOST_ACTION_ENDPOINT)
 
 # Initialize action engine and register built-in handlers.
 action_engine = ActionEngine()
-action_engine.set_user_roles({user_id: (ADMIN_ROLE,) for user_id in ALLOWED_IDS})
 register_default_actions(action_engine)
 
 HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
@@ -162,7 +147,7 @@ def is_authorized(update: Update) -> bool:
     if user is None:
         return False
 
-    result = user.id in ALLOWED_IDS
+    result = action_engine.is_known_user(user.id)
     if not result:
         logging.warning(f"Unauthorized access attempt by user ID: {user.id}")
     return result
@@ -318,8 +303,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 def main() -> None:
-    if not TOKEN or not ALLOWED_IDS:
-        raise ValueError("Missing TELEGRAM_BOT_TOKEN or ALLOWED_TELEGRAM_IDS")
+    if not TOKEN:
+        raise ValueError("Missing TELEGRAM_BOT_TOKEN")
 
     if HOST_ACTIONS_CONFIG:
         reload_result, restored = _reload_host_actions_with_rollback()

@@ -60,21 +60,32 @@ def _normalize_roles(raw_roles: Any, field_name: str) -> tuple[str, ...]:
     return tuple(normalized)
 
 
-def _parse_user_roles(raw_user_roles: Any) -> dict[int, tuple[str, ...]]:
-    if raw_user_roles is None:
+def _parse_users(raw_users: Any) -> dict[int, tuple[str, ...]]:
+    if raw_users is None:
         return {}
 
-    if not isinstance(raw_user_roles, dict):
-        raise ValueError("user_roles must be a mapping of Telegram user ID to role list")
+    if not isinstance(raw_users, dict):
+        raise ValueError("users must be a mapping of Telegram user ID to user configuration")
 
     parsed: dict[int, tuple[str, ...]] = {}
-    for raw_user_id, raw_roles in raw_user_roles.items():
+    for raw_user_id, raw_user_config in raw_users.items():
         try:
             user_id = int(str(raw_user_id).strip())
         except ValueError as exc:
-            raise ValueError(f"Invalid Telegram user ID in user_roles: {raw_user_id}") from exc
+            raise ValueError(f"Invalid Telegram user ID in users: {raw_user_id}") from exc
 
-        parsed[user_id] = _normalize_roles(raw_roles, f"user_roles[{raw_user_id!r}]")
+        if isinstance(raw_user_config, dict):
+            parsed[user_id] = _normalize_roles(raw_user_config.get("roles"), f"users[{raw_user_id!r}].roles")
+            continue
+
+        # Backward compatibility for older config shape: user_roles: {"123": ["admin"]}
+        if isinstance(raw_user_config, list):
+            parsed[user_id] = _normalize_roles(raw_user_config, f"users[{raw_user_id!r}]")
+            continue
+
+        raise ValueError(
+            f"users[{raw_user_id!r}] must be a mapping with a 'roles' list"
+        )
 
     return parsed
 
@@ -86,8 +97,12 @@ def _load_actions_from_payload(
 ) -> Result[int, BaseException]:
     snapshot = engine.snapshot_state()
     try:
-        if "user_roles" in payload:
-            engine.set_user_roles(_parse_user_roles(payload.get("user_roles")))
+        if "users" in payload:
+            engine.set_user_roles(_parse_users(payload.get("users")))
+        elif "user_roles" in payload:
+            engine.set_user_roles(_parse_users(payload.get("user_roles")))
+        elif replace_configured_actions:
+            engine.set_user_roles({})
 
         actions = payload.get("actions", {})
         total_registered = 0
