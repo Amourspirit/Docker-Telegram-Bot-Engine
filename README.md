@@ -16,7 +16,7 @@ The current implementation uses Telegram polling. That means the container does 
 - Reload host action config with `/reload_actions`
 - Run curated host actions such as `/server_uptime` through a local host runner
 - Restrict access to specific Telegram user IDs via `ALLOWED_TELEGRAM_IDS`
-- Run as a Docker container with Docker Compose
+- Run the full stack through the Makefile
 - Use an event-driven action engine with host-loaded registrations
 
 ## Project Structure
@@ -91,42 +91,36 @@ Configured actions cannot claim the reserved command names `/help`, `/action_inf
 
 If a Telegram user is not listed in `ALLOWED_TELEGRAM_IDS`, the bot ignores the request.
 
-## Run With Docker Compose
+## Run With Make
 
 From the project root:
 
 ```sh
-docker compose up -d --build
+make up
 ```
 
 Check container status:
 
 ```sh
-docker compose ps
+make status
 ```
 
 View logs:
 
 ```sh
-docker compose logs -f telegram-c2-bot
+make logs
 ```
 
 Run the host runner on the host if you want host-backed actions (TCP mode for Docker Desktop macOS):
 
 ```sh
-cd src/host-runner
-HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
-HOST_ACTIONS_HOST=0.0.0.0 \
-HOST_ACTIONS_PORT=8787 \
-uv run python main.py
+make start-host-runner
 ```
 
 Linux hosts can keep Unix socket mode:
 
 ```sh
-cd src/host-runner
-HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
-uv run python main.py
+make start-host-runner
 ```
 
 If startup succeeds, the logs should include a line showing that the bot is polling.
@@ -146,7 +140,18 @@ If the bot does not reply:
 - confirm your numeric Telegram ID is in `ALLOWED_TELEGRAM_IDS`
 - confirm the bot container is running
 - confirm the container can reach Telegram on outbound port `443`
-- inspect logs with `docker compose logs -f telegram-c2-bot`
+- inspect logs with `make logs`
+
+## Make Targets
+
+- `make up` starts the host runner and bot container
+- `make down` stops the bot container and host runner
+- `make restart` restarts both services
+- `make logs` tails the bot container logs
+- `make host-runner-logs` tails the host runner log
+- `make status` shows bot container and host runner status
+- `make start-host-runner` starts only the host runner
+- `make stop-host-runner` stops only the host runner
 
 ## No Port Exposure Required
 

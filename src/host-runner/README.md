@@ -18,18 +18,22 @@ HOST_ACTIONS_PORT=8787
 
 Operation definitions live in `config/host-actions.example.yaml` at the repository root.
 
-## Run
+## Run With Make
+
+From the project root:
 
 ```sh
-HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
-uv run python main.py
+make start-host-runner
 ```
 
-Run (TCP mode, recommended on Docker Desktop macOS):
+To stop it:
 
 ```sh
-HOST_ACTIONS_CONFIG="$PWD/../../config/host-actions.example.yaml" \
-HOST_ACTIONS_HOST=0.0.0.0 \
-HOST_ACTIONS_PORT=8787 \
-uv run python main.py
+make stop-host-runner
+```
+
+To follow its log output:
+
+```sh
+make host-runner-logs
 ```
