@@ -13,6 +13,7 @@ from bot_service.engine import ActionEngine
 from bot_service.event_args import EventArgs
 from bot_service.host_client import HostActionClient
 from bot_service.host_loader import load_actions_from_text
+from bot_service.host_loader import load_users_from_text
 from bot_service.presentation import build_action_info_text
 from bot_service.presentation import build_help_text
 from bot_service.result import Result
@@ -41,20 +42,35 @@ ACTIONS_CONFIG_CANDIDATES = (
     Path("/app/config/actions.yml"),
     Path("/app/config/actions.json"),
 )
+USERS_CONFIG_CANDIDATES = (
+    Path("/app/config/users.yaml"),
+    Path("/app/config/users.yml"),
+    Path("/app/config/users.json"),
+)
 LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT: str | None = None
 LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH: Path | None = None
+LAST_KNOWN_GOOD_USERS_CONFIG_TEXT: str | None = None
+LAST_KNOWN_GOOD_USERS_CONFIG_PATH: Path | None = None
 
 
-def _resolve_actions_config_path() -> Result[Path, BaseException]:
-    for candidate in ACTIONS_CONFIG_CANDIDATES:
+def _resolve_config_path(candidates: tuple[Path, ...], config_label: str) -> Result[Path, BaseException]:
+    for candidate in candidates:
         if candidate.exists():
             return Result.success(candidate)
 
-    expected_paths = ", ".join(str(candidate) for candidate in ACTIONS_CONFIG_CANDIDATES)
-    return Result.failure(FileNotFoundError(f"Action config file not found. Expected one of: {expected_paths}"))
+    expected_paths = ", ".join(str(candidate) for candidate in candidates)
+    return Result.failure(FileNotFoundError(f"{config_label} config file not found. Expected one of: {expected_paths}"))
 
 
-def _read_host_actions_config_text() -> Result[tuple[Path, str], BaseException]:
+def _resolve_actions_config_path() -> Result[Path, BaseException]:
+    return _resolve_config_path(ACTIONS_CONFIG_CANDIDATES, "Action")
+
+
+def _resolve_users_config_path() -> Result[Path, BaseException]:
+    return _resolve_config_path(USERS_CONFIG_CANDIDATES, "User")
+
+
+def _read_actions_config_text() -> Result[tuple[Path, str], BaseException]:
     path_result = _resolve_actions_config_path()
     if Result.is_failure(path_result):
         return Result.failure(path_result.error)
@@ -67,7 +83,20 @@ def _read_host_actions_config_text() -> Result[tuple[Path, str], BaseException]:
         return Result.failure(exc)
 
 
-def _load_host_actions_config_from_text(
+def _read_users_config_text() -> Result[tuple[Path, str], BaseException]:
+    path_result = _resolve_users_config_path()
+    if Result.is_failure(path_result):
+        return Result.failure(path_result.error)
+
+    path = path_result.data
+
+    try:
+        return Result.success((path, path.read_text(encoding="utf-8")))
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+
+def _load_actions_config_from_text(
     config_text: str,
     config_path: Path,
     update_last_known_good: bool,
@@ -122,13 +151,124 @@ def _load_host_actions_config_from_text(
     return result
 
 
+def _load_users_config_from_text(
+    config_text: str,
+    config_path: Path,
+    update_last_known_good: bool,
+) -> Result[int, BaseException]:
+    global LAST_KNOWN_GOOD_USERS_CONFIG_TEXT
+    global LAST_KNOWN_GOOD_USERS_CONFIG_PATH
+
+    extension = config_path.suffix.lower()
+    if extension == ".json":
+        config_format = "json"
+    elif extension in {".yaml", ".yml"}:
+        config_format = "yaml"
+    else:
+        return Result.failure(
+            ValueError("Unsupported users config extension. Use .json, .yaml, or .yml")
+        )
+
+    result = load_users_from_text(
+        action_engine,
+        config_text,
+        config_format=config_format,
+        replace_configured_users=True,
+    )
+
+    if Result.is_success(result) and update_last_known_good:
+        LAST_KNOWN_GOOD_USERS_CONFIG_TEXT = config_text
+        LAST_KNOWN_GOOD_USERS_CONFIG_PATH = config_path
+
+    return result
+
+
+def _load_bot_configs() -> Result[tuple[int, Path, int, Path], BaseException]:
+    snapshot = action_engine.snapshot_state()
+
+    users_text_result = _read_users_config_text()
+    if Result.is_failure(users_text_result):
+        return Result.failure(users_text_result.error)
+
+    users_path, users_text = users_text_result.data
+    users_load_result = _load_users_config_from_text(
+        users_text,
+        users_path,
+        update_last_known_good=True,
+    )
+    if Result.is_failure(users_load_result):
+        action_engine.restore_state(snapshot)
+        return Result.failure(users_load_result.error)
+
+    actions_text_result = _read_actions_config_text()
+    if Result.is_failure(actions_text_result):
+        action_engine.restore_state(snapshot)
+        return Result.failure(actions_text_result.error)
+
+    actions_path, actions_text = actions_text_result.data
+    actions_load_result = _load_actions_config_from_text(
+        actions_text,
+        actions_path,
+        update_last_known_good=True,
+    )
+
+    if Result.is_failure(actions_load_result):
+        action_engine.restore_state(snapshot)
+        return Result.failure(actions_load_result.error)
+
+    return Result.success((users_load_result.data, users_path, actions_load_result.data, actions_path))
+
+
+def _reload_bot_configs_with_rollback() -> tuple[Result[tuple[int, Path, int, Path], BaseException], bool]:
+    load_result = _load_bot_configs()
+    if Result.is_success(load_result):
+        return load_result, False
+
+    if (
+        LAST_KNOWN_GOOD_USERS_CONFIG_TEXT
+        and LAST_KNOWN_GOOD_USERS_CONFIG_PATH
+        and LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT
+        and LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH
+    ):
+        snapshot = action_engine.snapshot_state()
+
+        users_restore_result = _load_users_config_from_text(
+            LAST_KNOWN_GOOD_USERS_CONFIG_TEXT,
+            LAST_KNOWN_GOOD_USERS_CONFIG_PATH,
+            update_last_known_good=False,
+        )
+        if Result.is_failure(users_restore_result):
+            action_engine.restore_state(snapshot)
+            return Result.failure(load_result.error), False
+
+        actions_restore_result = _load_actions_config_from_text(
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH,
+            update_last_known_good=False,
+        )
+        if Result.is_failure(actions_restore_result):
+            action_engine.restore_state(snapshot)
+            return Result.failure(load_result.error), False
+
+        return Result.success(
+            (
+                users_restore_result.data,
+                LAST_KNOWN_GOOD_USERS_CONFIG_PATH,
+                actions_restore_result.data,
+                LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH,
+            )
+        ), True
+
+    return Result.failure(load_result.error), False
+
+
 def _load_host_actions_config() -> Result[tuple[int, Path], BaseException]:
-    text_result = _read_host_actions_config_text()
+    text_result = _read_actions_config_text()
     if Result.is_failure(text_result):
         return Result.failure(text_result.error)
 
     config_path, config_text = text_result.data
-    load_result = _load_host_actions_config_from_text(
+    load_result = _load_actions_config_from_text(
         config_text,
         config_path,
         update_last_known_good=True,
@@ -138,23 +278,6 @@ def _load_host_actions_config() -> Result[tuple[int, Path], BaseException]:
         return Result.failure(load_result.error)
 
     return Result.success((load_result.data, config_path))
-
-
-def _reload_host_actions_with_rollback() -> tuple[Result[tuple[int, Path], BaseException], bool]:
-    load_result = _load_host_actions_config()
-    if Result.is_success(load_result):
-        return load_result, False
-
-    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT and LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH:
-        restore_result = _load_host_actions_config_from_text(
-            LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
-            LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH,
-            update_last_known_good=False,
-        )
-        if Result.is_success(restore_result):
-            return Result.success((restore_result.data, LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH)), True
-
-    return Result.failure(load_result.error), False
 
 
 def is_authorized(update: Update) -> bool:
@@ -268,22 +391,25 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logging.warning("Denied reload_actions for user ID %s due to missing role '%s'", user.id, ADMIN_ROLE)
         return
 
-    reload_result, restored = _reload_host_actions_with_rollback()
+    reload_result, restored = _reload_bot_configs_with_rollback()
     if Result.is_success(reload_result):
-        reload_count, config_path = reload_result.data
+        users_count, users_path, reload_count, actions_path = reload_result.data
         if restored:
             await message.reply_text(
-                "⚠️ Reload failed. Restored last known good action configuration.",
+                "⚠️ Reload failed. Restored last known good users/actions configuration.",
             )
             return
 
         await message.reply_text(
-            f"✅ Reloaded actions from `{config_path}`. Registered handlers: `{reload_count}`",
+            (
+                f"✅ Reloaded users from `{users_path}` (`{users_count}` users) and actions from "
+                f"`{actions_path}`. Registered handlers: `{reload_count}`"
+            ),
             parse_mode="Markdown",
         )
         return
 
-    await message.reply_text(f"❌ Failed to reload actions: {reload_result.error}")
+    await message.reply_text(f"❌ Failed to reload users/actions configuration: {reload_result.error}")
 
 
 async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -392,16 +518,18 @@ def main() -> None:
     if not TOKEN:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN")
 
-    reload_result, restored = _reload_host_actions_with_rollback()
+    reload_result, restored = _reload_bot_configs_with_rollback()
     if Result.is_success(reload_result):
-        reload_count, config_path = reload_result.data
+        users_count, users_path, reload_count, config_path = reload_result.data
         if restored:
             logging.warning(
-                "Startup reload failed. Restored last known good action configuration from memory."
+                "Startup reload failed. Restored last known good users/actions configuration from memory."
             )
         else:
             logging.info(
-                "Reloaded actions at startup from %s. Registered handlers: %s",
+                "Reloaded users at startup from %s (%s users), actions from %s. Registered handlers: %s",
+                users_path,
+                users_count,
                 config_path,
                 reload_count,
             )

@@ -362,7 +362,7 @@ def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> No
     bot = _load_bot_module(monkeypatch)
     monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
     bot.action_engine.set_user_roles({1: ("admin",)})
-    result = bot._load_host_actions_config_from_text(
+    result = bot._load_actions_config_from_text(
         "actions:\n"
         "  help:\n"
         "    handlers:\n"
@@ -384,7 +384,7 @@ def test_reload_rejects_reserved_alias_names(monkeypatch, tmp_path: Path) -> Non
     bot = _load_bot_module(monkeypatch)
     monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
     bot.action_engine.set_user_roles({1: ("admin",)})
-    result = bot._load_host_actions_config_from_text(
+    result = bot._load_actions_config_from_text(
         "actions:\n"
         "  cf_docker_url:\n"
         "    aliases:\n"
@@ -408,7 +408,7 @@ def test_reload_rejects_actions_by_tag_reserved_action_name(monkeypatch, tmp_pat
     bot = _load_bot_module(monkeypatch)
     monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
     bot.action_engine.set_user_roles({1: ("admin",)})
-    result = bot._load_host_actions_config_from_text(
+    result = bot._load_actions_config_from_text(
         "actions:\n"
         "  actions_by_tag:\n"
         "    handlers:\n"
@@ -430,7 +430,7 @@ def test_reload_fails_when_no_required_actions_file_exists(monkeypatch, tmp_path
     missing_json = tmp_path / "missing-actions.json"
     monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (missing_yaml, missing_yml, missing_json))
 
-    result = bot._read_host_actions_config_text()
+    result = bot._read_actions_config_text()
 
     assert Result.is_failure(result)
     assert "Action config file not found" in str(result.error)
@@ -456,12 +456,28 @@ def test_reload_prefers_yaml_then_yml_then_json(monkeypatch, tmp_path: Path) -> 
     assert path_result.data == yaml_path
 
 
+def test_reload_fails_when_no_required_users_file_exists(monkeypatch, tmp_path: Path) -> None:
+    bot = _load_bot_module(monkeypatch)
+    missing_yaml = tmp_path / "missing-users.yaml"
+    missing_yml = tmp_path / "missing-users.yml"
+    missing_json = tmp_path / "missing-users.json"
+    monkeypatch.setattr(bot, "USERS_CONFIG_CANDIDATES", (missing_yaml, missing_yml, missing_json))
+
+    result = bot._read_users_config_text()
+
+    assert Result.is_failure(result)
+    assert "User config file not found" in str(result.error)
+
+
 async def test_reload_actions_success_mentions_resolved_config_path(monkeypatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "actions.yaml"
-    config_path.write_text("actions: {}", encoding="utf-8")
+    actions_path = tmp_path / "actions.yaml"
+    users_path = tmp_path / "users.yaml"
+    actions_path.write_text("actions: {}", encoding="utf-8")
+    users_path.write_text('users:\n  "1":\n    roles:\n      - admin\n', encoding="utf-8")
 
     bot = _load_bot_module(monkeypatch)
-    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (actions_path,))
+    monkeypatch.setattr(bot, "USERS_CONFIG_CANDIDATES", (users_path,))
 
     reply_text = AsyncMock()
     update = SimpleNamespace(
@@ -474,6 +490,8 @@ async def test_reload_actions_success_mentions_resolved_config_path(monkeypatch,
 
     reply_text.assert_awaited_once()
     args, kwargs = reply_text.await_args
-    assert str(config_path) in args[0]
+    assert str(actions_path) in args[0]
+    assert str(users_path) in args[0]
+    assert "`1` users" in args[0]
     assert "Registered handlers: `0`" in args[0]
     assert kwargs.get("parse_mode") == "Markdown"

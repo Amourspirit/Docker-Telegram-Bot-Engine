@@ -1,12 +1,4 @@
 {
-    "users": {
-        "123456789": {
-            "roles": [
-                "admin",
-                "operator"
-            ]
-        }
-    },
     "actions": {
         "status": {
             "stop_on_failure": true,

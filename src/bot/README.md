@@ -14,8 +14,8 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - lists actions by tag with `/actions_by_tag <tag> [<tag> ...]`
 - shows action details with `/action_info <action_name>`
 - reloads action config with `/reload_actions`
-- ignores requests from Telegram users not listed in action config `users`
-- applies role-based checks per action from the selected `/app/config/actions.*` file
+- ignores requests from Telegram users not listed in users config `users`
+- applies role-based checks per action from `/app/config/actions.*`
 - supports an action engine with staged handlers for each command
 
 ## Configuration
@@ -28,7 +28,9 @@ BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
 BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 ```
 
-The bot requires one action config file in `/app/config` and checks in this order: `actions.yaml`, `actions.yml`, then `actions.json`.
+The bot requires one users config file in `/app/config` and checks in this order: `users.yaml`, `users.yml`, then `users.json`.
+
+The bot also requires one action config file in `/app/config` and checks in this order: `actions.yaml`, `actions.yml`, then `actions.json`.
 
 `BOT_HOST_ACTION_ENDPOINT` is optional. If set, the bot uses TCP transport to the host runner in `host:port` (or `tcp://host:port`) format.
 
@@ -36,7 +38,7 @@ The bot requires one action config file in `/app/config` and checks in this orde
 
 If both endpoint and socket are set, the bot prefers `BOT_HOST_ACTION_ENDPOINT`.
 
-Example configs are available at `config/actions.example.json` and `config/actions.example.yaml`.
+Example configs are available at `config/users.example.yaml`, `config/users.example.json`, `config/actions.example.yaml`, and `config/actions.example.json`.
 
 The host runner operation template lives at `config/host-actions.example.yaml`.
 
@@ -61,13 +63,13 @@ Host handlers can also define static params that are sent to the host runner:
 - example: `params: {domain_var: CF_SPIRAL_UI_DOMAIN_NAME}`
 - list formats such as `- name: ...` are rejected
 
-If `/reload_actions` fails, the bot restores the last known good action configuration snapshot in memory.
+If `/reload_actions` fails, the bot restores the last known good users/actions configuration snapshot in memory.
 
-Role-based authorization uses the selected `/app/config/actions.*` file:
+Role-based authorization uses both config files:
 
-- `users` maps Telegram user IDs to user definitions
+- users file: `users` maps Telegram user IDs to user definitions
 - each user definition can contain `roles`
-- each action must define `allowed_roles`
+- actions file: each action must define `allowed_roles`
 - actions without `allowed_roles` are denied by default
 - `/reload_actions` requires `admin` role
 
@@ -126,7 +128,7 @@ If startup succeeds, the logs should include a line showing that the bot is poll
 If the bot does not reply:
 
 - confirm `TELEGRAM_BOT_TOKEN` is valid
-- confirm your numeric Telegram ID exists in `users` inside the selected `/app/config/actions.*` file
+- confirm your numeric Telegram ID exists in `users` inside the selected `/app/config/users.*` file
 - confirm the bot container is running
 - confirm the container can reach Telegram on outbound port `443`
 - inspect logs with `make logs`

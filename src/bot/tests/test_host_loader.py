@@ -9,6 +9,8 @@ from bot_service.event_args import EventArgs
 from bot_service.host_loader import load_actions_from_file
 from bot_service.host_loader import load_actions_from_json
 from bot_service.host_loader import load_actions_from_yaml
+from bot_service.host_loader import load_users_from_file
+from bot_service.host_loader import load_users_from_yaml
 from bot_service.result import Result
 
 
@@ -17,9 +19,6 @@ async def test_load_actions_from_file_registers_handlers(tmp_path: Path) -> None
     config_path.write_text(
         json.dumps(
             {
-                "users": {
-                    "1": {"roles": ["operator"]},
-                },
                 "actions": {
                     "status": {
                         "stop_on_failure": True,
@@ -49,6 +48,7 @@ async def test_load_actions_from_file_registers_handlers(tmp_path: Path) -> None
     load_result = load_actions_from_file(engine, str(config_path), replace_configured_actions=True)
     assert Result.is_success(load_result)
     assert load_result.data == 2
+    engine.set_user_roles({1: ("operator",)})
 
     dispatch_result = await engine.dispatch(
         EventArgs(
@@ -75,10 +75,6 @@ async def test_load_actions_from_file_resolves_relative_project_root_path(tmp_pa
     config_path = config_dir / "actions.yaml"
     config_path.write_text(
         """
-users:
-    "1":
-        roles:
-            - operator
 actions:
   status:
     allowed_roles:
@@ -105,10 +101,6 @@ async def test_load_actions_from_yaml_file_registers_handlers(tmp_path: Path) ->
     config_path = tmp_path / "actions.yaml"
     config_path.write_text(
         """
-users:
-    "1":
-        roles:
-            - operator
 actions:
   status:
     stop_on_failure: true
@@ -131,6 +123,7 @@ actions:
     load_result = load_actions_from_file(engine, str(config_path), replace_configured_actions=True)
     assert Result.is_success(load_result)
     assert load_result.data == 2
+    engine.set_user_roles({1: ("operator",)})
 
     dispatch_result = await engine.dispatch(
         EventArgs(
@@ -163,10 +156,6 @@ async def test_load_actions_from_yaml_registers_host_handlers() -> None:
     load_result = load_actions_from_yaml(
         engine,
         """
-users:
-    "1":
-        roles:
-            - operator
 actions:
   server_uptime:
     stop_on_failure: true
@@ -182,6 +171,7 @@ actions:
     )
     assert Result.is_success(load_result)
     assert load_result.data == 1
+    engine.set_user_roles({1: ("operator",)})
 
     dispatch_result = await engine.dispatch(
         EventArgs(
@@ -213,10 +203,6 @@ async def test_load_actions_from_yaml_registers_host_handlers_with_params() -> N
     load_result = load_actions_from_yaml(
         engine,
         """
-users:
-  "1":
-    roles:
-      - operator
 actions:
   cf_ui_url:
     stop_on_failure: true
@@ -234,6 +220,7 @@ actions:
     )
     assert Result.is_success(load_result)
     assert load_result.data == 1
+    engine.set_user_roles({1: ("operator",)})
 
     dispatch_result = await engine.dispatch(
         EventArgs(
@@ -253,10 +240,6 @@ async def test_load_actions_from_yaml_registers_aliases() -> None:
     load_result = load_actions_from_yaml(
         engine,
         """
-users:
-  "1":
-    roles:
-      - operator
 actions:
   cf_docker_url:
     aliases:
@@ -310,10 +293,6 @@ def test_load_actions_from_yaml_replaces_action_aliases() -> None:
     initial_result = load_actions_from_yaml(
         engine,
         """
-users:
-  "1":
-    roles:
-      - operator
 actions:
   cf_docker_url:
     aliases:
@@ -334,10 +313,6 @@ actions:
     replacement_result = load_actions_from_yaml(
         engine,
         """
-users:
-  "1":
-    roles:
-      - operator
 actions:
   cf_docker_url:
     aliases:
@@ -363,10 +338,6 @@ def test_load_actions_from_yaml_rejects_host_handler_params_non_mapping() -> Non
     result = load_actions_from_yaml(
         engine,
         """
-users:
-  "1":
-    roles:
-      - operator
 actions:
   cf_ui_url:
     allowed_roles: [operator]
@@ -400,9 +371,6 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
         engine,
         json.dumps(
             {
-                "users": {
-                    "1": {"roles": ["operator"]},
-                },
                 "actions": {
                     "status": {
                         "allowed_roles": ["operator"],
@@ -432,9 +400,6 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
         engine,
         json.dumps(
             {
-                "users": {
-                    "1": {"roles": ["operator"]},
-                },
                 "actions": {
                     "status": {
                         "allowed_roles": ["operator"],
@@ -453,6 +418,7 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
         replace_configured_actions=True,
     )
     assert Result.is_failure(bad_result)
+    engine.set_user_roles({1: ("operator",)})
 
     dispatch_result = await engine.dispatch(
         EventArgs(
@@ -466,28 +432,24 @@ async def test_load_actions_from_json_rolls_back_on_failure() -> None:
     assert dispatch_result.data == "external=ok"
 
 
-def test_load_actions_from_yaml_rejects_malformed_users() -> None:
+def test_load_users_from_yaml_rejects_malformed_users() -> None:
     engine = ActionEngine()
-    result = load_actions_from_yaml(
+    result = load_users_from_yaml(
         engine,
         """
 users:
   abc:
         roles:
             - admin
-actions:
-  status:
-    allowed_roles: [admin]
-    handlers: []
 """.strip(),
-        replace_configured_actions=True,
+        replace_configured_users=True,
     )
 
     assert Result.is_failure(result)
     assert "Invalid Telegram user ID" in str(result.error)
 
 
-def test_load_actions_from_yaml_normalizes_tags() -> None:
+def test_load_actions_from_yaml_rejects_embedded_users() -> None:
     engine = ActionEngine()
     result = load_actions_from_yaml(
         engine,
@@ -496,6 +458,49 @@ users:
   "1":
     roles:
       - operator
+actions:
+  status:
+    allowed_roles: [operator]
+    handlers: []
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_failure(result)
+    assert "Action config cannot include users" in str(result.error)
+
+
+def test_load_users_from_file_registers_roles(tmp_path: Path) -> None:
+    config_path = tmp_path / "users.yaml"
+    config_path.write_text(
+        """
+users:
+  "1":
+    roles:
+      - Operator
+      - admin
+""".strip(),
+        encoding="utf-8",
+    )
+
+    engine = ActionEngine()
+    result = load_users_from_file(engine, str(config_path), replace_configured_users=True)
+    assert Result.is_success(result)
+    assert result.data == 1
+    assert set(engine.get_user_roles(1)) == {"operator", "admin"}
+
+
+def test_load_users_from_file_missing_file() -> None:
+    engine = ActionEngine()
+    result = load_users_from_file(engine, "/tmp/non-existent-users-config.yaml")
+    assert Result.is_failure(result)
+
+
+def test_load_actions_from_yaml_normalizes_tags() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
 actions:
   status:
     allowed_roles: [operator]

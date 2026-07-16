@@ -151,6 +151,38 @@ def _parse_users(raw_users: Any) -> dict[int, tuple[str, ...]]:
     return parsed
 
 
+def _extract_users_payload(payload: dict[str, Any]) -> Result[Any, BaseException]:
+    if "users" in payload:
+        return Result.success(payload.get("users"))
+    if "user_roles" in payload:
+        return Result.success(payload.get("user_roles"))
+
+    return Result.failure(ValueError("User config must include a 'users' key"))
+
+
+def _load_users_from_payload(
+    engine: ActionEngine,
+    payload: dict[str, Any],
+    replace_configured_users: bool = False,
+) -> Result[int, BaseException]:
+    snapshot = engine.snapshot_state()
+    try:
+        users_result = _extract_users_payload(payload)
+        if Result.is_failure(users_result):
+            if replace_configured_users:
+                engine.set_user_roles({})
+                return Result.success(0)
+
+            return Result.failure(users_result.error)
+
+        parsed_users = _parse_users(users_result.data)
+        engine.set_user_roles(parsed_users)
+        return Result.success(len(parsed_users))
+    except Exception as exc:  # noqa: BLE001
+        engine.restore_state(snapshot)
+        return Result.failure(exc)
+
+
 def _load_actions_from_payload(
     engine: ActionEngine,
     payload: dict[str, Any],
@@ -158,12 +190,10 @@ def _load_actions_from_payload(
 ) -> Result[int, BaseException]:
     snapshot = engine.snapshot_state()
     try:
-        if "users" in payload:
-            engine.set_user_roles(_parse_users(payload.get("users")))
-        elif "user_roles" in payload:
-            engine.set_user_roles(_parse_users(payload.get("user_roles")))
-        elif replace_configured_actions:
-            engine.set_user_roles({})
+        if "users" in payload or "user_roles" in payload:
+            return Result.failure(
+                ValueError("Action config cannot include users. Move users to users.yaml, users.yml, or users.json")
+            )
 
         actions = payload.get("actions", {})
         total_registered = 0
@@ -239,6 +269,28 @@ def load_actions_from_json(
     )
 
 
+def load_users_from_json(
+    engine: ActionEngine,
+    config_json: str,
+    replace_configured_users: bool = False,
+) -> Result[int, BaseException]:
+    try:
+        payload = json.loads(config_json)
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return Result.failure(ValueError("User config must be a mapping with a 'users' key"))
+
+    return _load_users_from_payload(
+        engine,
+        payload,
+        replace_configured_users=replace_configured_users,
+    )
+
+
 def load_actions_from_yaml(
     engine: ActionEngine,
     config_yaml: str,
@@ -258,6 +310,28 @@ def load_actions_from_yaml(
         engine,
         payload,
         replace_configured_actions=replace_configured_actions,
+    )
+
+
+def load_users_from_yaml(
+    engine: ActionEngine,
+    config_yaml: str,
+    replace_configured_users: bool = False,
+) -> Result[int, BaseException]:
+    try:
+        payload = yaml.safe_load(config_yaml)
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        return Result.failure(ValueError("User config must be a mapping with a 'users' key"))
+
+    return _load_users_from_payload(
+        engine,
+        payload,
+        replace_configured_users=replace_configured_users,
     )
 
 
@@ -282,6 +356,29 @@ def load_actions_from_text(
         )
 
     return Result.failure(ValueError(f"Unsupported action config format: {config_format}"))
+
+
+def load_users_from_text(
+    engine: ActionEngine,
+    config_text: str,
+    config_format: str,
+    replace_configured_users: bool = False,
+) -> Result[int, BaseException]:
+    normalized = config_format.strip().lower()
+    if normalized == "json":
+        return load_users_from_json(
+            engine,
+            config_text,
+            replace_configured_users=replace_configured_users,
+        )
+    if normalized in {"yaml", "yml"}:
+        return load_users_from_yaml(
+            engine,
+            config_text,
+            replace_configured_users=replace_configured_users,
+        )
+
+    return Result.failure(ValueError(f"Unsupported user config format: {config_format}"))
 
 
 def load_actions_from_file(
@@ -316,4 +413,39 @@ def load_actions_from_file(
         config_json,
         config_format=config_format,
         replace_configured_actions=replace_configured_actions,
+    )
+
+
+def load_users_from_file(
+    engine: ActionEngine,
+    config_path: str,
+    replace_configured_users: bool = False,
+) -> Result[int, BaseException]:
+    """Load and register users from a host-mounted JSON or YAML config file."""
+    path = _resolve_project_root_path(config_path)
+    if not path.exists():
+        return Result.failure(FileNotFoundError(f"User config file not found: {config_path}"))
+
+    try:
+        config_json = path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        return Result.failure(exc)
+
+    extension = path.suffix.lower()
+    if extension == ".json":
+        config_format = "json"
+    elif extension in {".yaml", ".yml"}:
+        config_format = "yaml"
+    else:
+        return Result.failure(
+            ValueError(
+                "Unsupported user config file extension. Use .json, .yaml, or .yml"
+            )
+        )
+
+    return load_users_from_text(
+        engine,
+        config_json,
+        config_format=config_format,
+        replace_configured_users=replace_configured_users,
     )
