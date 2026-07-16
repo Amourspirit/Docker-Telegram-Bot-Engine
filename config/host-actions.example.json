@@ -1,0 +1,23 @@
+{
+  "operations": {
+    "server.uptime": {
+      "command": [
+        "/usr/bin/uptime"
+      ],
+      "timeout_seconds": 5,
+      "allow_user_args": false
+    },
+    "server.generic_url": {
+      "command": [
+        "/bin/bash",
+        "-lc",
+        "printf '%s\\n' \"https://{{domain_var}}\""
+      ],
+      "timeout_seconds": 5,
+      "allow_user_args": false,
+      "allowed_placeholders": [
+        "domain_var"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[project]
+name = "config-builder"
+version = "0.1.0"
+description = "CLI for composing users, actions, and host-actions configuration files"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["click>=8.1.7", "pyyaml>=6.0.2"]
+
+[dependency-groups]
+dev = ["pytest>=8.3.2", "pytest-asyncio>=0.24.0"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
