@@ -73,7 +73,8 @@ def _resolve_output_path(
 ) -> Path:
     if output:
         raw = Path(output).expanduser()
-        resolved = raw if raw.is_absolute() else (Path.cwd() / raw)
+        # resolved = raw if raw.is_absolute() else (Path.cwd() / raw)
+        resolved = raw if raw.is_absolute() else (project_root / raw)
     else:
         resolved = _default_output_dir(project_root, input_type) / DEFAULT_FILE_NAMES[input_type]
 
@@ -206,7 +207,7 @@ def main(
     if report_duplicates:
         report_path = Path(report_duplicates).expanduser()
         if not report_path.is_absolute():
-            report_path = (Path.cwd() / report_path).resolve()
+            report_path = (project_root / report_path).resolve()
         write_json_file(report_path, {"duplicates": duplicate_items})
         click.echo(f"Duplicate report: {report_path}")
 
@@ -229,7 +230,7 @@ def main(
     if summary_json:
         summary_path = Path(summary_json).expanduser()
         if not summary_path.is_absolute():
-            summary_path = (Path.cwd() / summary_path).resolve()
+            summary_path = (project_root / summary_path).resolve()
         summary_payload: dict[str, Any] = {
             "timestamp_utc": datetime.now(UTC).isoformat(),
             "project_root": str(project_root),
