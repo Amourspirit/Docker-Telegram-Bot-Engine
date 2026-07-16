@@ -13,11 +13,11 @@ The current implementation uses Telegram polling. That means the container does 
 - Read container logs with `/logs <container-name> [tail]`
 - List available commands with `/help`
 - Inspect action stages with `/action_info <action_name>`
-- Reload host action config with `/reload_actions`
+- Reload action config with `/reload_actions`
 - Run curated host actions such as `/server_uptime` through a local host runner
 - Restrict access and roles via `users` and `allowed_roles` in action config
 - Run the full stack through the Makefile
-- Use an event-driven action engine with host-loaded registrations
+- Use an event-driven action engine with config-loaded registrations
 
 ## Project Structure
 
@@ -48,7 +48,6 @@ Create a `.env` file in the project root:
 ```env
 TELEGRAM_BOT_TOKEN=1234567890:replace-with-your-bot-token
 DOCKER_SOCKET_PATH=/var/run/docker.sock
-BOT_ACTIONS_CONFIG=/app/config/actions.json
 BOT_HOST_ACTION_ENDPOINT=host.docker.internal:8787
 BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 ```
@@ -56,13 +55,13 @@ BOT_HOST_ACTION_SOCKET=/var/run/telegram-bot/host-actions.sock
 Notes:
 
 - On macOS with Docker Desktop, the default Docker socket mapping in `docker-compose.yaml` is already set up to use `/var/run/docker.sock` unless you override it.
-- `BOT_ACTIONS_CONFIG` is optional and points to a host-mounted JSON or YAML action config. Templates exist at `config/actions.example.json` and `config/actions.example.yaml`.
+- The bot requires one action config file in `/app/config` and checks in this order: `actions.yaml`, `actions.yml`, then `actions.json`. Templates exist at `config/actions.example.json` and `config/actions.example.yaml`.
 - `BOT_HOST_ACTION_ENDPOINT` is optional and enables TCP transport to the host runner using `host:port` (or `tcp://host:port`).
 - `BOT_HOST_ACTION_SOCKET` is optional unless you configure host-backed actions. It should point to the Unix socket created by the host runner inside the container.
 - If both endpoint and socket are set, endpoint is preferred.
 - Actions can define `default_timeout_seconds`; handlers can optionally override with `timeout_seconds`.
-- Action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
-- Action config supports role controls:
+- action config handlers can include `timeout_seconds` to enforce per-handler execution limits.
+- action config supports role controls:
   - `users`: map of Telegram user ID to user configuration
     - `roles`: list of role names for that user
   - `actions.<name>.allowed_roles`: roles allowed to execute that action
@@ -84,7 +83,7 @@ Current commands:
 - `/logs <container-name> [tail]` returns recent container logs
 - `/help` shows currently registered actions
 - `/action_info <action_name>` shows policy and staged handlers for one action
-- `/reload_actions` reloads host action config from `BOT_ACTIONS_CONFIG`
+- `/reload_actions` reloads action config from `/app/config/actions.yaml`, `/app/config/actions.yml`, or `/app/config/actions.json`
 - `/reload_actions` requires `admin` role
 - `/server_uptime` is an example host-backed command when the example configs are enabled
 
@@ -146,7 +145,7 @@ If startup succeeds, the logs should include a line showing that the bot is poll
 If the bot does not reply:
 
 - confirm `TELEGRAM_BOT_TOKEN` is valid
-- confirm your numeric Telegram ID is present in `users` within `BOT_ACTIONS_CONFIG`
+- confirm your numeric Telegram ID is present in `users` within the selected `/app/config/actions.*` file
 - confirm the bot container is running
 - confirm the container can reach Telegram on outbound port `443`
 - inspect logs with `make logs`

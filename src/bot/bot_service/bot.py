@@ -36,51 +36,53 @@ host_action_client = HostActionClient(HOST_ACTION_SOCKET, endpoint=HOST_ACTION_E
 action_engine = ActionEngine()
 register_default_actions(action_engine)
 
-HOST_ACTIONS_CONFIG = os.environ.get("BOT_ACTIONS_CONFIG")
+ACTIONS_CONFIG_CANDIDATES = (
+    Path("/app/config/actions.yaml"),
+    Path("/app/config/actions.yml"),
+    Path("/app/config/actions.json"),
+)
 LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT: str | None = None
+LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH: Path | None = None
 
 
-def _resolve_project_root_path(config_path: str) -> Path:
-    path = Path(config_path).expanduser()
-    if path.is_absolute():
-        return path
+def _resolve_actions_config_path() -> Result[Path, BaseException]:
+    for candidate in ACTIONS_CONFIG_CANDIDATES:
+        if candidate.exists():
+            return Result.success(candidate)
 
-    project_root = Path(__file__).resolve().parents[3]
-    return (project_root / path).resolve()
+    expected_paths = ", ".join(str(candidate) for candidate in ACTIONS_CONFIG_CANDIDATES)
+    return Result.failure(FileNotFoundError(f"Action config file not found. Expected one of: {expected_paths}"))
 
 
-def _read_host_actions_config_text() -> Result[str, BaseException]:
-    if not HOST_ACTIONS_CONFIG:
-        return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
+def _read_host_actions_config_text() -> Result[tuple[Path, str], BaseException]:
+    path_result = _resolve_actions_config_path()
+    if Result.is_failure(path_result):
+        return Result.failure(path_result.error)
 
-    path = _resolve_project_root_path(HOST_ACTIONS_CONFIG)
-    if not path.exists():
-        return Result.failure(FileNotFoundError(f"Action config file not found: {HOST_ACTIONS_CONFIG}"))
+    path = path_result.data
 
     try:
-        return Result.success(path.read_text(encoding="utf-8"))
+        return Result.success((path, path.read_text(encoding="utf-8")))
     except Exception as exc:  # noqa: BLE001
         return Result.failure(exc)
 
 
 def _load_host_actions_config_from_text(
     config_text: str,
+    config_path: Path,
     update_last_known_good: bool,
 ) -> Result[int, BaseException]:
     global LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT
+    global LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH
 
-    if not HOST_ACTIONS_CONFIG:
-        return Result.failure(ValueError("BOT_ACTIONS_CONFIG is not set"))
-
-    path = _resolve_project_root_path(HOST_ACTIONS_CONFIG)
-    extension = path.suffix.lower()
+    extension = config_path.suffix.lower()
     if extension == ".json":
         config_format = "json"
     elif extension in {".yaml", ".yml"}:
         config_format = "yaml"
     else:
         return Result.failure(
-            ValueError("Unsupported BOT_ACTIONS_CONFIG extension. Use .json, .yaml, or .yml")
+            ValueError("Unsupported actions config extension. Use .json, .yaml, or .yml")
         )
 
     snapshot = action_engine.snapshot_state()
@@ -115,36 +117,42 @@ def _load_host_actions_config_from_text(
 
     if Result.is_success(result) and update_last_known_good:
         LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT = config_text
+        LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH = config_path
 
     return result
 
 
-def _load_host_actions_config() -> Result[int, BaseException]:
-    if not HOST_ACTIONS_CONFIG:
-        return Result.success(0)
-
+def _load_host_actions_config() -> Result[tuple[int, Path], BaseException]:
     text_result = _read_host_actions_config_text()
     if Result.is_failure(text_result):
         return Result.failure(text_result.error)
 
-    return _load_host_actions_config_from_text(
-        text_result.data,
+    config_path, config_text = text_result.data
+    load_result = _load_host_actions_config_from_text(
+        config_text,
+        config_path,
         update_last_known_good=True,
     )
 
+    if Result.is_failure(load_result):
+        return Result.failure(load_result.error)
 
-def _reload_host_actions_with_rollback() -> tuple[Result[int, BaseException], bool]:
+    return Result.success((load_result.data, config_path))
+
+
+def _reload_host_actions_with_rollback() -> tuple[Result[tuple[int, Path], BaseException], bool]:
     load_result = _load_host_actions_config()
     if Result.is_success(load_result):
         return load_result, False
 
-    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT:
+    if LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT and LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH:
         restore_result = _load_host_actions_config_from_text(
             LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT,
+            LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH,
             update_last_known_good=False,
         )
         if Result.is_success(restore_result):
-            return restore_result, True
+            return Result.success((restore_result.data, LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH)), True
 
     return Result.failure(load_result.error), False
 
@@ -260,12 +268,9 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logging.warning("Denied reload_actions for user ID %s due to missing role '%s'", user.id, ADMIN_ROLE)
         return
 
-    if not HOST_ACTIONS_CONFIG:
-        await message.reply_text("BOT_ACTIONS_CONFIG is not set.")
-        return
-
     reload_result, restored = _reload_host_actions_with_rollback()
     if Result.is_success(reload_result):
+        reload_count, config_path = reload_result.data
         if restored:
             await message.reply_text(
                 "⚠️ Reload failed. Restored last known good action configuration.",
@@ -273,7 +278,7 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
 
         await message.reply_text(
-            f"✅ Reloaded actions from `{HOST_ACTIONS_CONFIG}`. Registered handlers: `{reload_result.data}`",
+            f"✅ Reloaded actions from `{config_path}`. Registered handlers: `{reload_count}`",
             parse_mode="Markdown",
         )
         return
@@ -387,21 +392,21 @@ def main() -> None:
     if not TOKEN:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN")
 
-    if HOST_ACTIONS_CONFIG:
-        reload_result, restored = _reload_host_actions_with_rollback()
-        if Result.is_success(reload_result):
-            if restored:
-                logging.warning(
-                    "Startup reload failed. Restored last known good action configuration from memory."
-                )
-            else:
-                logging.info(
-                    "Reloaded actions at startup from %s. Registered handlers: %s",
-                    HOST_ACTIONS_CONFIG,
-                    reload_result.data,
-                )
+    reload_result, restored = _reload_host_actions_with_rollback()
+    if Result.is_success(reload_result):
+        reload_count, config_path = reload_result.data
+        if restored:
+            logging.warning(
+                "Startup reload failed. Restored last known good action configuration from memory."
+            )
         else:
-            logging.error("Failed to reload actions at startup: %s", reload_result.error)
+            logging.info(
+                "Reloaded actions at startup from %s. Registered handlers: %s",
+                config_path,
+                reload_count,
+            )
+    else:
+        logging.error("Failed to reload actions at startup: %s", reload_result.error)
 
     app = ApplicationBuilder().token(TOKEN).build()
 

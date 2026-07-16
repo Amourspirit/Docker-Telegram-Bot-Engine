@@ -11,7 +11,6 @@ from bot_service.result import Result
 
 
 def _load_bot_module(monkeypatch):
-    monkeypatch.delenv("BOT_ACTIONS_CONFIG", raising=False)
     monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
     monkeypatch.setattr("docker.from_env", lambda: object())
 
@@ -360,13 +359,8 @@ def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> No
     config_path = tmp_path / "actions.yaml"
     config_path.write_text("actions: {}", encoding="utf-8")
 
-    monkeypatch.setenv("BOT_ACTIONS_CONFIG", str(config_path))
-    monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
-    monkeypatch.setattr("docker.from_env", lambda: object())
-
-    import bot_service.bot as bot_module
-
-    bot = importlib.reload(bot_module)
+    bot = _load_bot_module(monkeypatch)
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
     bot.action_engine.set_user_roles({1: ("admin",)})
     result = bot._load_host_actions_config_from_text(
         "actions:\n"
@@ -375,6 +369,7 @@ def test_reload_rejects_reserved_action_names(monkeypatch, tmp_path: Path) -> No
         "      - id: host.help.blocked\n"
         "        target: host\n"
         "        operation: helper.blocked\n",
+        config_path,
         update_last_known_good=False,
     )
 
@@ -386,13 +381,8 @@ def test_reload_rejects_reserved_alias_names(monkeypatch, tmp_path: Path) -> Non
     config_path = tmp_path / "actions.yaml"
     config_path.write_text("actions: {}", encoding="utf-8")
 
-    monkeypatch.setenv("BOT_ACTIONS_CONFIG", str(config_path))
-    monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
-    monkeypatch.setattr("docker.from_env", lambda: object())
-
-    import bot_service.bot as bot_module
-
-    bot = importlib.reload(bot_module)
+    bot = _load_bot_module(monkeypatch)
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
     bot.action_engine.set_user_roles({1: ("admin",)})
     result = bot._load_host_actions_config_from_text(
         "actions:\n"
@@ -403,6 +393,7 @@ def test_reload_rejects_reserved_alias_names(monkeypatch, tmp_path: Path) -> Non
         "      - id: host.help.blocked\n"
         "        target: host\n"
         "        operation: helper.blocked\n",
+        config_path,
         update_last_known_good=False,
     )
 
@@ -414,13 +405,8 @@ def test_reload_rejects_actions_by_tag_reserved_action_name(monkeypatch, tmp_pat
     config_path = tmp_path / "actions.yaml"
     config_path.write_text("actions: {}", encoding="utf-8")
 
-    monkeypatch.setenv("BOT_ACTIONS_CONFIG", str(config_path))
-    monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
-    monkeypatch.setattr("docker.from_env", lambda: object())
-
-    import bot_service.bot as bot_module
-
-    bot = importlib.reload(bot_module)
+    bot = _load_bot_module(monkeypatch)
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
     bot.action_engine.set_user_roles({1: ("admin",)})
     result = bot._load_host_actions_config_from_text(
         "actions:\n"
@@ -429,8 +415,65 @@ def test_reload_rejects_actions_by_tag_reserved_action_name(monkeypatch, tmp_pat
         "      - id: host.actions_by_tag.blocked\n"
         "        target: host\n"
         "        operation: helper.blocked\n",
+        config_path,
         update_last_known_good=False,
     )
 
     assert Result.is_failure(result)
     assert "reserved command names" in str(result.error)
+
+
+def test_reload_fails_when_no_required_actions_file_exists(monkeypatch, tmp_path: Path) -> None:
+    bot = _load_bot_module(monkeypatch)
+    missing_yaml = tmp_path / "missing-actions.yaml"
+    missing_yml = tmp_path / "missing-actions.yml"
+    missing_json = tmp_path / "missing-actions.json"
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (missing_yaml, missing_yml, missing_json))
+
+    result = bot._read_host_actions_config_text()
+
+    assert Result.is_failure(result)
+    assert "Action config file not found" in str(result.error)
+
+
+def test_reload_prefers_yaml_then_yml_then_json(monkeypatch, tmp_path: Path) -> None:
+    yaml_path = tmp_path / "actions.yaml"
+    yml_path = tmp_path / "actions.yml"
+    json_path = tmp_path / "actions.json"
+    yml_path.write_text("actions: {}", encoding="utf-8")
+    json_path.write_text('{"actions": {}}', encoding="utf-8")
+
+    bot = _load_bot_module(monkeypatch)
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (yaml_path, yml_path, json_path))
+
+    path_result = bot._resolve_actions_config_path()
+    assert Result.is_success(path_result)
+    assert path_result.data == yml_path
+
+    yaml_path.write_text("actions: {}", encoding="utf-8")
+    path_result = bot._resolve_actions_config_path()
+    assert Result.is_success(path_result)
+    assert path_result.data == yaml_path
+
+
+async def test_reload_actions_success_mentions_resolved_config_path(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "actions.yaml"
+    config_path.write_text("actions: {}", encoding="utf-8")
+
+    bot = _load_bot_module(monkeypatch)
+    monkeypatch.setattr(bot, "ACTIONS_CONFIG_CANDIDATES", (config_path,))
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.reload_actions(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert str(config_path) in args[0]
+    assert "Registered handlers: `0`" in args[0]
+    assert kwargs.get("parse_mode") == "Markdown"
