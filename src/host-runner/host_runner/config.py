@@ -39,7 +39,7 @@ def _load_operations_from_payload(payload: dict[str, Any]) -> dict[str, HostOper
         if not isinstance(command, list) or not command or not all(
             isinstance(part, str) and part for part in command
         ):
-            raise ValueError(f"Operation '{operation_name}' must define a non-empty string command list")
+            raise ValueError(f"Operation '{operation_name}' must define a non-empty string command list. Ensure that any command numbers are converted to strings in the config file.")
 
         timeout_seconds = operation_config.get("timeout_seconds")
         if timeout_seconds is not None:
