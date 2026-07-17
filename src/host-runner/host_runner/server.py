@@ -10,6 +10,7 @@ from typing import Any
 
 from host_runner.config import HostOperationDefinition
 from host_runner.config import load_operations_from_file
+from host_runner.project_root import find_project_root
 
 
 logger = logging.getLogger(__name__)
@@ -217,4 +218,14 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
     )
+    pj_root = os.environ.get("HOST_PROJECT_ROOT")
+    if pj_root is None:
+        try:
+            base_dir_path = Path(__file__)
+            project_root = find_project_root(base_dir_path)
+            os.environ["HOST_PROJECT_ROOT"] = str(project_root)
+        except FileNotFoundError:
+            logger.warning("Could not locate .project_root in parent directories. HOST_PROJECT_ROOT not set.")
+
+
     asyncio.run(_async_main())

@@ -1,30 +1,20 @@
 operations:
-  server.uptime:
-    command:
-      - /usr/bin/uptime
-    timeout_seconds: 5
-    allow_user_args: false
-  server.date:
-    command:
-      - /bin/date
-    timeout_seconds: 5
-    allow_user_args: false
   server.cf_action:
     command:
       - /bin/bash
       - -lc
-      - source /Users/Shared/Projects/Docker/telegram-bot/storage/scripts/cf.sh && cf_remote_cmd "{{domain_var}}" "{{action}}"
+      - source $HOST_PROJECT_ROOT/storage/scripts/cf.sh && cf_remote_cmd "{{domain_var}}"
+        "{{action}}"
     timeout_seconds: 15
     allow_user_args: false
     allowed_placeholders:
       - domain_var
       - action
-
   server.cf_domain:
     command:
       - /bin/bash
       - -lc
-      - source /Users/Shared/Projects/Docker/telegram-bot/storage/scripts/cf.sh && printf '%s\n' "{{domain_var}}"
+      - source $HOST_PROJECT_ROOT/storage/scripts/cf.sh && printf '%s\n' "{{domain_var}}"
     timeout_seconds: 5
     allow_user_args: false
     allowed_placeholders:
@@ -33,8 +23,41 @@ operations:
     command:
       - /bin/bash
       - -lc
-      - source /Users/Shared/Projects/Docker/telegram-bot/storage/scripts/cf.sh && printf '%s\n' "https://{{domain_var}}"
+      - source $HOST_PROJECT_ROOT/storage/scripts/cf.sh && printf '%s\n' "https://{{domain_var}}"
     timeout_seconds: 5
     allow_user_args: false
     allowed_placeholders:
       - domain_var
+  server.uptime:
+    command:
+      - /usr/bin/uptime
+    timeout_seconds: 5
+    allow_user_args: false
+  server.generic_url:
+    command:
+      - /bin/bash
+      - -lc
+      - printf '%s\n' "https://{{domain_var}}"
+    timeout_seconds: 5
+    allow_user_args: false
+    allowed_placeholders:
+      - domain_var
+  server.lms_action:
+    command:
+      - /Users/paul/.lmstudio/bin/lms
+      - "{{subcmd}}"
+    timeout_seconds: 5
+    allow_user_args: true
+    allowed_placeholders:
+      - subcmd
+  server.logs_action:
+    command:
+      - tail
+      - -n
+      - "{{lines}}"
+      - "{{log_path}}"
+    timeout_seconds: 5
+    allow_user_args: false
+    allowed_placeholders:
+      - lines
+      - log_path
