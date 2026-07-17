@@ -46,7 +46,10 @@ class HostActionRunner:
                 return {"ok": False, "error": "params keys must be non-empty strings"}
             if not isinstance(value, str):
                 return {"ok": False, "error": "params values must be strings"}
-            normalized_params[key] = value
+
+            # Expand $VARS and ~ because commands run without a shell.
+            expanded_value = os.path.expanduser(os.path.expandvars(value))
+            normalized_params[key] = expanded_value
 
         allowed_placeholders = set(definition.allowed_placeholders)
         if normalized_params and not allowed_placeholders:
