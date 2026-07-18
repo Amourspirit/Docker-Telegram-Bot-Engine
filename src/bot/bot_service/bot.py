@@ -17,6 +17,7 @@ from bot_service.host_loader import load_actions_from_text
 from bot_service.host_loader import load_users_from_text
 from bot_service.presentation import build_action_info_text
 from bot_service.presentation import build_help_text
+from bot_service.reply_format import apply_reply_format
 from bot_service.result import Result
 
 # Configure logging
@@ -329,8 +330,9 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
         await message.reply_text(f"Error: {result.error}")
         return
 
+    rendered_text, parse_mode = apply_reply_format(result.data, event_args.reply_format)
     try:
-        await message.reply_text(result.data, parse_mode="Markdown")
+        await message.reply_text(rendered_text, parse_mode=parse_mode)
     except BadRequest as exc:
         if not _is_markdown_parse_error(exc):
             raise
@@ -339,7 +341,7 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
             "Falling back to plain-text reply for action %s after Markdown parse failure.",
             action_name,
         )
-        await message.reply_text(result.data)
+        await message.reply_text(rendered_text)
 
 
 def _parse_message_command(message_text: str) -> tuple[str, tuple[str, ...]] | None:

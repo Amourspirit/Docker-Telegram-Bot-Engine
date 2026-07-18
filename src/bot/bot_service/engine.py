@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from bot_service.event_args import EventArgs
+from bot_service.reply_format import ReplyFormat
 from bot_service.result import Result
 
 HandlerReturn = Result[str | None, BaseException | None]
@@ -17,6 +18,7 @@ class ActionPolicy:
     default_timeout_seconds: float | None = None
     allowed_roles: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    reply_format: ReplyFormat | None = None
 
 
 @dataclass(slots=True)
@@ -72,6 +74,7 @@ class ActionEngine:
                 default_timeout_seconds=registration.policy.default_timeout_seconds,
                 allowed_roles=registration.policy.allowed_roles,
                 tags=registration.policy.tags,
+                reply_format=registration.policy.reply_format,
             )
             cloned_stages: list[list[RegisteredHandler]] = []
             for stage in registration.stages:
@@ -329,6 +332,11 @@ class ActionEngine:
                 "default_timeout_seconds": registration.policy.default_timeout_seconds,
                 "allowed_roles": list(registration.policy.allowed_roles),
                 "tags": list(registration.policy.tags),
+                "reply_format": (
+                    registration.policy.reply_format.name
+                    if registration.policy.reply_format is not None
+                    else None
+                ),
             },
             "stages": stages,
         }
@@ -342,6 +350,9 @@ class ActionEngine:
         authorization_result = self.can_user_execute_action(event_args.user_id, resolved_action_name)
         if Result.is_failure(authorization_result):
             return Result.failure(authorization_result.error)
+
+        if registration.policy.reply_format is not None:
+            event_args.reply_format = registration.policy.reply_format
 
         for stage in registration.stages:
             if event_args.cancelled:

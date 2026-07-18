@@ -49,6 +49,67 @@ async def test_host_action_client_round_trips_over_unix_socket(tmp_path) -> None
         socket_path.unlink(missing_ok=True)
 
 
+async def test_host_action_client_sets_reply_format_from_response(tmp_path) -> None:
+    socket_path = Path("/tmp") / f"host-actions-{uuid.uuid4().hex}.sock"
+
+    async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.readline()
+        response_payload = {"ok": True, "message": "body", "reply_format": "json"}
+        writer.write(json.dumps(response_payload).encode("utf-8") + b"\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_unix_server(handle_connection, path=str(socket_path))
+    try:
+        client = HostActionClient(str(socket_path))
+        event_args = EventArgs(
+            action_name="server_uptime",
+            user_id=1,
+            raw_args=("--json",),
+            correlation_id="cid-client-rf",
+        )
+        result = await client.invoke("server.uptime", event_args)
+
+        assert Result.is_success(result)
+        assert event_args.reply_format is not None
+        assert event_args.reply_format.name == "json"
+    finally:
+        server.close()
+        await server.wait_closed()
+        socket_path.unlink(missing_ok=True)
+
+
+async def test_host_action_client_ignores_unknown_reply_format(tmp_path) -> None:
+    socket_path = Path("/tmp") / f"host-actions-{uuid.uuid4().hex}.sock"
+
+    async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.readline()
+        response_payload = {"ok": True, "message": "body", "reply_format": "toml"}
+        writer.write(json.dumps(response_payload).encode("utf-8") + b"\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_unix_server(handle_connection, path=str(socket_path))
+    try:
+        client = HostActionClient(str(socket_path))
+        event_args = EventArgs(
+            action_name="server_uptime",
+            user_id=1,
+            raw_args=(),
+            correlation_id="cid-client-rf-unknown",
+        )
+        result = await client.invoke("server.uptime", event_args)
+
+        assert Result.is_success(result)
+        assert event_args.reply_format is None
+    finally:
+        server.close()
+        await server.wait_closed()
+        socket_path.unlink(missing_ok=True)
+
+
 async def test_host_action_client_reports_runner_error(tmp_path) -> None:
     socket_path = Path("/tmp") / f"host-actions-{uuid.uuid4().hex}.sock"
 

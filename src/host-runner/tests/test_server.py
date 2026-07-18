@@ -9,6 +9,8 @@ import pytest
 
 import host_runner.config as config_module
 from host_runner.config import HostOperationDefinition
+from host_runner.config import ReplyFormatMatrix
+from host_runner.config import ReplyFormatRule
 from host_runner.config import load_operations_from_file
 from host_runner.config import load_operations_from_text
 from host_runner.server import HostActionRunner
@@ -540,3 +542,174 @@ async def test_runner_serves_over_tcp() -> None:
     finally:
         server.close()
         await server.wait_closed()
+
+
+def test_load_operations_parses_reply_format_shorthand() -> None:
+    operations = load_operations_from_text(
+        """
+operations:
+  server.lms_action:
+    command:
+      - /usr/bin/env
+      - echo
+    reply_format: json
+""".strip(),
+        "yaml",
+    )
+
+    matrix = operations["server.lms_action"].reply_format
+    assert matrix is not None
+    assert matrix.default == "json"
+    assert matrix.rules == ()
+
+
+def test_load_operations_parses_reply_format_matrix() -> None:
+    operations = load_operations_from_text(
+        """
+operations:
+  server.my_action:
+    command:
+      - /bin/mybin
+    allow_user_args: true
+    allowed_optional_params:
+      - -a
+      - -b
+      - -c
+      - -d
+      - -e
+    reply_format:
+      - default: markdown
+        json:
+          - single:
+              - -a
+              - -d
+          - ands:
+              - and:
+                  - -a
+                  - -b
+              - and:
+                  - -a
+                  - -e
+        text:
+          - single:
+              - -e
+          - ands:
+              - and:
+                  - -a
+                  - -c
+""".strip(),
+        "yaml",
+    )
+
+    matrix = operations["server.my_action"].reply_format
+    assert matrix is not None
+    assert matrix.default == "markdown"
+    assert len(matrix.rules) == 2
+
+    json_rule = matrix.rules[0]
+    assert json_rule.format_name == "json"
+    assert json_rule.singles == ("-a", "-d")
+    assert json_rule.and_groups == (("-a", "-b"), ("-a", "-e"))
+
+    text_rule = matrix.rules[1]
+    assert text_rule.format_name == "text"
+    assert text_rule.singles == ("-e",)
+    assert text_rule.and_groups == (("-a", "-c"),)
+
+
+def test_load_operations_rejects_empty_reply_format_string() -> None:
+    with pytest.raises(ValueError, match="reply_format string cannot be empty"):
+        load_operations_from_text(
+            """
+operations:
+  server.my_action:
+    command:
+      - /bin/mybin
+    reply_format: "   "
+""".strip(),
+            "yaml",
+        )
+
+
+def test_reply_format_matrix_resolves_single_or() -> None:
+    matrix = ReplyFormatMatrix(
+        default="markdown",
+        rules=(
+            ReplyFormatRule(format_name="json", singles=("-a", "-d")),
+            ReplyFormatRule(format_name="text", singles=("-e",)),
+        ),
+    )
+
+    assert matrix.resolve({"-a"}) == "json"
+    assert matrix.resolve({"-d"}) == "json"
+    assert matrix.resolve({"-e"}) == "text"
+    assert matrix.resolve(set()) == "markdown"
+
+
+def test_reply_format_matrix_resolves_and_groups() -> None:
+    matrix = ReplyFormatMatrix(
+        default="markdown",
+        rules=(
+            ReplyFormatRule(format_name="json", and_groups=(("-a", "-b"),)),
+        ),
+    )
+
+    assert matrix.resolve({"-a", "-b"}) == "json"
+    assert matrix.resolve({"-a"}) == "markdown"
+
+
+def test_reply_format_matrix_first_matching_rule_wins() -> None:
+    matrix = ReplyFormatMatrix(
+        default="markdown",
+        rules=(
+            ReplyFormatRule(format_name="json", singles=("-a",)),
+            ReplyFormatRule(format_name="text", singles=("-a",)),
+        ),
+    )
+
+    assert matrix.resolve({"-a"}) == "json"
+
+
+@pytest.mark.asyncio
+async def test_handle_request_returns_resolved_reply_format() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('ok')"],
+                timeout_seconds=1,
+                allow_user_args=True,
+                allowed_optional_params=("--json",),
+                reply_format=ReplyFormatMatrix(
+                    default="markdown",
+                    rules=(ReplyFormatRule(format_name="json", singles=("--json",)),),
+                ),
+            )
+        }
+    )
+
+    with_json = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["--json"]}
+    )
+    assert with_json == {"ok": True, "message": "ok", "reply_format": "json"}
+
+    without_json = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": []}
+    )
+    assert without_json == {"ok": True, "message": "ok", "reply_format": "markdown"}
+
+
+@pytest.mark.asyncio
+async def test_handle_request_omits_reply_format_when_unset() -> None:
+    runner = HostActionRunner(
+        {
+            "server.uptime": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('up')"],
+                timeout_seconds=1,
+            )
+        }
+    )
+
+    response = await runner.handle_request({"operation": "server.uptime", "raw_args": []})
+
+    assert response == {"ok": True, "message": "up"}
+

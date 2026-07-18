@@ -106,6 +106,7 @@
                 "admin",
                 "operator"
             ],
+            "reply_format": "text",
             "handlers": [
                 {
                     "id": "host.server.uptime",

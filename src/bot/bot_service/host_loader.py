@@ -9,6 +9,7 @@ import yaml
 
 from bot_service.engine import ActionEngine, ActionPolicy
 from bot_service.host_client import build_host_operation_handler
+from bot_service.reply_format import resolve_reply_format
 from bot_service.result import Result
 
 
@@ -215,6 +216,10 @@ def _load_actions_from_payload(
                 action_config.get("tags"),
                 f"actions[{action_name!r}].tags",
             )
+            try:
+                reply_format = resolve_reply_format(action_config.get("reply_format"))
+            except ValueError as exc:
+                raise ValueError(f"actions[{action_name!r}].reply_format: {exc}") from exc
             engine.register_action(
                 action_name,
                 policy=ActionPolicy(
@@ -222,6 +227,7 @@ def _load_actions_from_payload(
                     default_timeout_seconds=default_timeout_seconds,
                     allowed_roles=allowed_roles,
                     tags=tags,
+                    reply_format=reply_format,
                 ),
             )
             engine.register_aliases(action_name, aliases)

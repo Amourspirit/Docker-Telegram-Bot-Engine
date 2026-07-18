@@ -139,7 +139,13 @@ class HostActionRunner:
         if definition.allow_user_args:
             command.extend(normalized_raw_args)
 
-        return await self._run_command(command, definition.timeout_seconds)
+        response = await self._run_command(command, definition.timeout_seconds)
+
+        if response.get("ok") and definition.reply_format is not None:
+            present_params = set(normalized_raw_args)
+            response["reply_format"] = definition.reply_format.resolve(present_params)
+
+        return response
 
     async def serve_forever(self, socket_path: str | None = None, host: str | None = None, port: int | None = None) -> None:
         if host and port is not None:

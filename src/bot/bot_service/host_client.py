@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from typing import Any, Awaitable, Callable
 
 from bot_service.event_args import EventArgs
+from bot_service.reply_format import get_reply_format
 from bot_service.result import Result
 
 
@@ -75,6 +76,15 @@ class HostActionClient:
             message = response_payload.get("message")
             if message is not None and not isinstance(message, str):
                 return Result.failure(HostActionError("Host action success response must contain a string message"))
+
+            reply_format_name = response_payload.get("reply_format")
+            if isinstance(reply_format_name, str) and reply_format_name.strip():
+                try:
+                    event_args.reply_format = get_reply_format(reply_format_name)
+                except ValueError:
+                    # Unknown format from host: keep any existing action-level format.
+                    pass
+
             return Result.success(message)
 
         error_message = response_payload.get("error") or "Host action failed"

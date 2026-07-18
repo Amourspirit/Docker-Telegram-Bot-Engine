@@ -79,6 +79,8 @@ actions:
     allowed_roles:
       - admin
       - operator
+    # Send this action's reply as plain text (no Markdown parsing).
+    reply_format: text
     handlers:
       - id: host.server.uptime
         target: host

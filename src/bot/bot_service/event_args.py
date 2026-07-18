@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from bot_service.reply_format import ReplyFormat
 from bot_service.result import Result
 
 
@@ -17,6 +18,7 @@ class EventArgs:
     shared_state: dict[str, Any] = field(default_factory=dict)
     results: dict[str, Result[Any, BaseException | None]] = field(default_factory=dict)
     response_sections: list[str] = field(default_factory=list)
+    reply_format: ReplyFormat | None = None
 
     def cancel(self, reason: str) -> None:
         self.cancelled = True
