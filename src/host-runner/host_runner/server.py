@@ -24,6 +24,16 @@ class HostActionRunner:
     def __init__(self, operations: dict[str, HostOperationDefinition]) -> None:
         self.operations = operations
 
+    def _normalize_optional_param_prefix(self, raw_args: list[str]) -> list[str]:
+        normalized_args: list[str] = []
+        for raw_arg in raw_args:
+            if raw_arg.startswith("—"):
+                normalized_args.append("--" + raw_arg[1:])
+            else:
+                normalized_args.append(raw_arg)
+
+        return normalized_args
+
     def _validate_optional_params(self, operation_name: str, raw_args: list[str], allowed: tuple[str, ...]) -> str | None:
         if not raw_args:
             return None
@@ -102,14 +112,16 @@ class HostActionRunner:
         if raw_args and not definition.allow_user_args:
             return {"ok": False, "error": f"Operation '{operation_name}' does not allow user args"}
 
-        if raw_args:
-            validation_error = self._validate_raw_args(raw_args)
+        normalized_raw_args = self._normalize_optional_param_prefix(raw_args)
+
+        if normalized_raw_args:
+            validation_error = self._validate_raw_args(normalized_raw_args)
             if validation_error is not None:
                 return {"ok": False, "error": validation_error}
 
             optional_param_error = self._validate_optional_params(
                 operation_name,
-                raw_args,
+                normalized_raw_args,
                 definition.allowed_optional_params,
             )
             if optional_param_error is not None:
@@ -125,7 +137,7 @@ class HostActionRunner:
             return {"ok": False, "error": str(exc)}
 
         if definition.allow_user_args:
-            command.extend(raw_args)
+            command.extend(normalized_raw_args)
 
         return await self._run_command(command, definition.timeout_seconds)
 

@@ -217,7 +217,10 @@ async def test_handle_request_rejects_unapproved_optional_param() -> None:
 
     assert response == {
         "ok": False,
-        "error": "Optional param '--yaml' is not allowed for operation 'echo.args'",
+        "error": (
+            "Optional param '--yaml' is not allowed for operation 'echo.args'. "
+            "Only the following optional params are allowed: --json"
+        ),
     }
 
 
@@ -250,7 +253,56 @@ async def test_handle_request_enforces_optional_params_per_operation() -> None:
     assert allowed_response == {"ok": True, "message": "--json"}
     assert denied_response == {
         "ok": False,
-        "error": "Optional param '--json' is not allowed for operation 'echo.without_json'",
+        "error": (
+            "Optional param '--json' is not allowed for operation 'echo.without_json'. "
+            "Only the following optional params are allowed: list"
+        ),
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_request_converts_leading_em_dash_before_optional_param_validation() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "import sys; print(' '.join(sys.argv[1:]))"],
+                timeout_seconds=1,
+                allow_user_args=True,
+                allowed_optional_params=("--json",),
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["—json"]}
+    )
+
+    assert response == {"ok": True, "message": "--json"}
+
+
+@pytest.mark.asyncio
+async def test_handle_request_only_converts_em_dash_at_start_of_optional_param() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "import sys; print(' '.join(sys.argv[1:]))"],
+                timeout_seconds=1,
+                allow_user_args=True,
+                allowed_optional_params=("--json",),
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["prefix—json"]}
+    )
+
+    assert response == {
+        "ok": False,
+        "error": (
+            "Optional param 'prefix—json' is not allowed for operation 'echo.args'. "
+            "Only the following optional params are allowed: --json"
+        ),
     }
 
 
