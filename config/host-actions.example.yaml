@@ -4,6 +4,7 @@ operations:
       - /usr/bin/uptime
     timeout_seconds: 5
     allow_user_args: false
+    allowed_optional_params: []
 
   server.generic_url:
     command:
@@ -14,3 +15,4 @@ operations:
     allow_user_args: false
     allowed_placeholders:
       - domain_var
+    allowed_optional_params: []

@@ -31,6 +31,7 @@ operations:
     assert operations["server.uptime"].timeout_seconds == 5.0
     assert operations["server.uptime"].allow_user_args is False
     assert operations["server.uptime"].allowed_placeholders == ()
+    assert operations["server.uptime"].allowed_optional_params == ()
 
 
 def test_load_operations_from_yaml_parses_allowed_placeholders() -> None:
@@ -49,6 +50,62 @@ operations:
     )
 
     assert operations["server.generic_url"].allowed_placeholders == ("domain_var",)
+
+
+def test_load_operations_from_yaml_parses_allowed_optional_params() -> None:
+        operations = load_operations_from_text(
+                """
+operations:
+    server.lms_action:
+        command:
+            - /usr/bin/env
+            - echo
+        allow_user_args: true
+        allowed_optional_params:
+            - --json
+            - --json
+            - list
+""".strip(),
+                "yaml",
+        )
+
+        assert operations["server.lms_action"].allowed_optional_params == ("--json", "list")
+
+
+def test_load_operations_from_yaml_rejects_invalid_allowed_optional_params_shape() -> None:
+        with pytest.raises(ValueError, match="allowed_optional_params must be a list of strings"):
+                load_operations_from_text(
+                        """
+operations:
+    server.lms_action:
+        command:
+            - /usr/bin/env
+            - echo
+        allow_user_args: true
+        allowed_optional_params: --json
+""".strip(),
+                        "yaml",
+                )
+
+
+def test_load_operations_from_yaml_rejects_invalid_allowed_optional_params_entry() -> None:
+        with pytest.raises(
+                ValueError,
+                match="allowed_optional_params entries must be non-empty strings",
+        ):
+                load_operations_from_text(
+                        """
+operations:
+    server.lms_action:
+        command:
+            - /usr/bin/env
+            - echo
+        allow_user_args: true
+        allowed_optional_params:
+            - ""
+""".strip(),
+                        "yaml",
+                )
 
 
 def test_load_operations_from_file_resolves_relative_project_root_path(tmp_path: Path, monkeypatch) -> None:
@@ -129,6 +186,7 @@ async def test_handle_request_appends_allowed_user_args() -> None:
                 command=[sys.executable, "-c", "import sys; print(' '.join(sys.argv[1:]))"],
                 timeout_seconds=1,
                 allow_user_args=True,
+                allowed_optional_params=("alpha", "beta"),
             )
         }
     )
@@ -138,6 +196,62 @@ async def test_handle_request_appends_allowed_user_args() -> None:
     )
 
     assert response == {"ok": True, "message": "alpha beta"}
+
+
+@pytest.mark.asyncio
+async def test_handle_request_rejects_unapproved_optional_param() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "import sys; print(' '.join(sys.argv[1:]))"],
+                timeout_seconds=1,
+                allow_user_args=True,
+                allowed_optional_params=("--json",),
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["--yaml"]}
+    )
+
+    assert response == {
+        "ok": False,
+        "error": "Optional param '--yaml' is not allowed for operation 'echo.args'",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_request_enforces_optional_params_per_operation() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.with_json": HostOperationDefinition(
+                command=[sys.executable, "-c", "import sys; print(' '.join(sys.argv[1:]))"],
+                timeout_seconds=1,
+                allow_user_args=True,
+                allowed_optional_params=("--json",),
+            ),
+            "echo.without_json": HostOperationDefinition(
+                command=[sys.executable, "-c", "import sys; print(' '.join(sys.argv[1:]))"],
+                timeout_seconds=1,
+                allow_user_args=True,
+                allowed_optional_params=("list",),
+            ),
+        }
+    )
+
+    allowed_response = await runner.handle_request(
+        {"operation": "echo.with_json", "raw_args": ["--json"]}
+    )
+    denied_response = await runner.handle_request(
+        {"operation": "echo.without_json", "raw_args": ["--json"]}
+    )
+
+    assert allowed_response == {"ok": True, "message": "--json"}
+    assert denied_response == {
+        "ok": False,
+        "error": "Optional param '--json' is not allowed for operation 'echo.without_json'",
+    }
 
 
 @pytest.mark.asyncio

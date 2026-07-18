@@ -14,6 +14,7 @@ class HostOperationDefinition:
     timeout_seconds: float | None = None
     allow_user_args: bool = False
     allowed_placeholders: tuple[str, ...] = ()
+    allowed_optional_params: tuple[str, ...] = ()
 
 
 def _resolve_config_path(config_path: str) -> Path:
@@ -63,11 +64,29 @@ def _load_operations_from_payload(payload: dict[str, Any]) -> dict[str, HostOper
             if placeholder_name not in normalized_allowed_placeholders:
                 normalized_allowed_placeholders.append(placeholder_name)
 
+        raw_allowed_optional_params = operation_config.get("allowed_optional_params", [])
+        if raw_allowed_optional_params is None:
+            raw_allowed_optional_params = []
+        if not isinstance(raw_allowed_optional_params, list):
+            raise ValueError(
+                f"Operation '{operation_name}' allowed_optional_params must be a list of strings"
+            )
+
+        normalized_allowed_optional_params: list[str] = []
+        for optional_param in raw_allowed_optional_params:
+            if not isinstance(optional_param, str) or not optional_param.strip():
+                raise ValueError(
+                    f"Operation '{operation_name}' allowed_optional_params entries must be non-empty strings"
+                )
+            if optional_param not in normalized_allowed_optional_params:
+                normalized_allowed_optional_params.append(optional_param)
+
         result[operation_name] = HostOperationDefinition(
             command=list(command),
             timeout_seconds=timeout_seconds,
             allow_user_args=allow_user_args,
             allowed_placeholders=tuple(normalized_allowed_placeholders),
+            allowed_optional_params=tuple(normalized_allowed_optional_params),
         )
 
     return result

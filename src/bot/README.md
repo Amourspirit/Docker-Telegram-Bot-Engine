@@ -63,6 +63,12 @@ Host handlers can also define static params that are sent to the host runner:
 - example: `params: {domain_var: CF_SPIRAL_UI_DOMAIN_NAME}`
 - list formats such as `- name: ...` are rejected
 
+Host runner operations can also define approved optional params:
+
+- set `allowed_optional_params` in host-actions config for each operation
+- when `allow_user_args` is true, every Telegram-supplied arg must be included in `allowed_optional_params`
+- unapproved args are rejected and returned to Telegram as an error
+
 If `/reload_actions` fails, the bot restores the last known good users/actions configuration snapshot in memory.
 
 Role-based authorization uses both config files:

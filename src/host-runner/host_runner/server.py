@@ -24,6 +24,21 @@ class HostActionRunner:
     def __init__(self, operations: dict[str, HostOperationDefinition]) -> None:
         self.operations = operations
 
+    def _validate_optional_params(self, operation_name: str, raw_args: list[str], allowed: tuple[str, ...]) -> str | None:
+        if not raw_args:
+            return None
+
+        allowed_params = set(allowed)
+        disallowed_params = [arg for arg in raw_args if arg not in allowed_params]
+        if not disallowed_params:
+            return None
+
+        return (
+            f"Optional param '{disallowed_params[0]}' is not allowed for operation "
+            f"'{operation_name}'. "
+            f"Only the following optional params are allowed: {', '.join(sorted(allowed_params))}"
+        )
+
     def _validate_raw_args(self, raw_args: list[str]) -> str | None:
         if len(raw_args) > MAX_USER_ARGS:
             return f"Too many arguments (max {MAX_USER_ARGS})"
@@ -91,6 +106,14 @@ class HostActionRunner:
             validation_error = self._validate_raw_args(raw_args)
             if validation_error is not None:
                 return {"ok": False, "error": validation_error}
+
+            optional_param_error = self._validate_optional_params(
+                operation_name,
+                raw_args,
+                definition.allowed_optional_params,
+            )
+            if optional_param_error is not None:
+                return {"ok": False, "error": optional_param_error}
 
         try:
             command = self._apply_placeholder_substitution(

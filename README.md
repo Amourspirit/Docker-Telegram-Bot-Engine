@@ -69,6 +69,8 @@ Notes:
   - `actions.<name>.allowed_roles`: roles allowed to execute that action
   - actions without `allowed_roles` are denied by default
 - Host runner operations are declared separately in `config/host-actions.example.yaml`.
+- Host runner operations can define `allowed_optional_params`; every Telegram-supplied arg must be listed there when `allow_user_args` is true.
+- If any Telegram-supplied arg is not approved in `allowed_optional_params`, the bot returns an error message to the Telegram client.
 
 ## How It Works
 
