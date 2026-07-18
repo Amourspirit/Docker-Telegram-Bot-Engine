@@ -232,11 +232,14 @@ class HostActionRunner:
             for key, value in params.items():
                 replaced = replaced.replace(f"{{{{{key}}}}}", value)
 
-            matches = PLACEHOLDER_PATTERN.findall(replaced)
+            # Expand command parts because subprocess execution bypasses shell expansion.
+            expanded_part = os.path.expanduser(os.path.expandvars(replaced))
+
+            matches = PLACEHOLDER_PATTERN.findall(expanded_part)
             if matches:
                 unresolved_placeholders.update(matches)
 
-            rendered.append(replaced)
+            rendered.append(expanded_part)
 
         if unresolved_placeholders:
             names = ", ".join(sorted(unresolved_placeholders))

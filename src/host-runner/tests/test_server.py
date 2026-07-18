@@ -466,6 +466,23 @@ async def test_handle_request_substitutes_placeholders() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_request_expands_environment_variables_in_command_parts(monkeypatch) -> None:
+    monkeypatch.setenv("HOST_TEST_PYTHON", sys.executable)
+    runner = HostActionRunner(
+        {
+            "env.expanded": HostOperationDefinition(
+                command=["$HOST_TEST_PYTHON", "-c", "print('ok')"],
+                timeout_seconds=1,
+            )
+        }
+    )
+
+    response = await runner.handle_request({"operation": "env.expanded", "raw_args": []})
+
+    assert response == {"ok": True, "message": "ok"}
+
+
+@pytest.mark.asyncio
 async def test_handle_request_rejects_unresolved_placeholders() -> None:
     runner = HostActionRunner(
         {
