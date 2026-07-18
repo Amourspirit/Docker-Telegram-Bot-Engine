@@ -6,6 +6,7 @@ from pathlib import Path
 
 import docker
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot_service.actions import register_default_actions
@@ -28,6 +29,8 @@ HOST_ACTION_ENDPOINT = os.environ.get("BOT_HOST_ACTION_ENDPOINT")
 RESERVED_COMMAND_NAMES = {"reload_actions", "action_info", "actions_by_tag", "help"}
 RESERVED_UNTAGGED_FILTERS = {"none", "unknown"}
 ADMIN_ROLE = "admin"
+MAX_USER_ARGS = 10
+MAX_USER_ARG_LENGTH = 256
 
 # Initialize Docker client (connects via the mounted socket)
 docker_client = docker.from_env()
@@ -51,6 +54,10 @@ LAST_KNOWN_GOOD_ACTIONS_CONFIG_TEXT: str | None = None
 LAST_KNOWN_GOOD_ACTIONS_CONFIG_PATH: Path | None = None
 LAST_KNOWN_GOOD_USERS_CONFIG_TEXT: str | None = None
 LAST_KNOWN_GOOD_USERS_CONFIG_PATH: Path | None = None
+
+
+def _is_markdown_parse_error(error: BadRequest) -> bool:
+    return "Can't parse entities" in str(error)
 
 
 def _resolve_config_path(candidates: tuple[Path, ...], config_label: str) -> Result[Path, BaseException]:
@@ -322,7 +329,17 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
         await message.reply_text(f"Error: {result.error}")
         return
 
-    await message.reply_text(result.data, parse_mode="Markdown")
+    try:
+        await message.reply_text(result.data, parse_mode="Markdown")
+    except BadRequest as exc:
+        if not _is_markdown_parse_error(exc):
+            raise
+
+        logging.warning(
+            "Falling back to plain-text reply for action %s after Markdown parse failure.",
+            action_name,
+        )
+        await message.reply_text(result.data)
 
 
 def _parse_message_command(message_text: str) -> tuple[str, tuple[str, ...]] | None:
@@ -352,6 +369,20 @@ def _normalize_requested_tags(raw_tags: list[str] | tuple[str, ...]) -> tuple[st
     return tuple(normalized)
 
 
+def _validate_user_command_args(raw_args: tuple[str, ...]) -> str | None:
+    if len(raw_args) > MAX_USER_ARGS:
+        return f"Too many arguments (max {MAX_USER_ARGS})"
+
+    for index, raw_arg in enumerate(raw_args, start=1):
+        if len(raw_arg) > MAX_USER_ARG_LENGTH:
+            return f"Argument {index} is too long (max {MAX_USER_ARG_LENGTH} characters)"
+
+        if any(ord(character) < 32 or ord(character) == 127 for character in raw_arg):
+            return f"Argument {index} contains control characters"
+
+    return None
+
+
 async def dispatch_action_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update):
         return
@@ -371,6 +402,17 @@ async def dispatch_action_command(update: Update, context: ContextTypes.DEFAULT_
     resolved_action_name = action_engine.resolve_action_name(action_name)
     if resolved_action_name is None or action_engine.describe_action(resolved_action_name) is None:
         await message.reply_text(f"Action '{action_name}' is not registered.")
+        return
+
+    validation_error = _validate_user_command_args(raw_args)
+    if validation_error is not None:
+        await message.reply_text("❌ Invalid arguments.")
+        logging.warning(
+            "Rejected user args for action %s from user %s: %s",
+            resolved_action_name,
+            update.effective_user.id if update.effective_user is not None else None,
+            validation_error,
+        )
         return
 
     context.args = list(raw_args)

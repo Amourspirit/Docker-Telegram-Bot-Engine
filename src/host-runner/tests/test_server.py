@@ -141,6 +141,69 @@ async def test_handle_request_appends_allowed_user_args() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_request_rejects_too_many_user_args() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('ok')"],
+                timeout_seconds=1,
+                allow_user_args=True,
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]}
+    )
+
+    assert response == {"ok": False, "error": "Too many arguments (max 10)"}
+
+
+@pytest.mark.asyncio
+async def test_handle_request_rejects_overlong_user_args() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('ok')"],
+                timeout_seconds=1,
+                allow_user_args=True,
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["x" * 257]}
+    )
+
+    assert response == {
+        "ok": False,
+        "error": "Argument 1 is too long (max 256 characters)",
+    }
+
+
+@pytest.mark.asyncio
+async def test_handle_request_rejects_control_characters_in_user_args() -> None:
+    runner = HostActionRunner(
+        {
+            "echo.args": HostOperationDefinition(
+                command=[sys.executable, "-c", "print('ok')"],
+                timeout_seconds=1,
+                allow_user_args=True,
+            )
+        }
+    )
+
+    response = await runner.handle_request(
+        {"operation": "echo.args", "raw_args": ["bad\narg"]}
+    )
+
+    assert response == {
+        "ok": False,
+        "error": "Argument 1 contains control characters",
+    }
+
+
+@pytest.mark.asyncio
 async def test_handle_request_reports_timeouts() -> None:
     runner = HostActionRunner(
         {

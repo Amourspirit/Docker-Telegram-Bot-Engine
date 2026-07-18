@@ -15,12 +15,27 @@ from host_runner.project_root import find_project_root
 
 logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 4000
+MAX_USER_ARGS = 10
+MAX_USER_ARG_LENGTH = 256
 PLACEHOLDER_PATTERN = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
 
 
 class HostActionRunner:
     def __init__(self, operations: dict[str, HostOperationDefinition]) -> None:
         self.operations = operations
+
+    def _validate_raw_args(self, raw_args: list[str]) -> str | None:
+        if len(raw_args) > MAX_USER_ARGS:
+            return f"Too many arguments (max {MAX_USER_ARGS})"
+
+        for index, raw_arg in enumerate(raw_args, start=1):
+            if len(raw_arg) > MAX_USER_ARG_LENGTH:
+                return f"Argument {index} is too long (max {MAX_USER_ARG_LENGTH} characters)"
+
+            if any(ord(character) < 32 or ord(character) == 127 for character in raw_arg):
+                return f"Argument {index} contains control characters"
+
+        return None
 
     async def handle_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         operation_name = payload.get("operation")
@@ -71,6 +86,11 @@ class HostActionRunner:
 
         if raw_args and not definition.allow_user_args:
             return {"ok": False, "error": f"Operation '{operation_name}' does not allow user args"}
+
+        if raw_args:
+            validation_error = self._validate_raw_args(raw_args)
+            if validation_error is not None:
+                return {"ok": False, "error": validation_error}
 
         try:
             command = self._apply_placeholder_substitution(

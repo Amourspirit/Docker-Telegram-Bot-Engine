@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import importlib
+import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
+from telegram.error import BadRequest
 
 from bot_service.engine import ActionPolicy
 from bot_service.host_client import build_host_operation_handler
@@ -11,6 +15,24 @@ from bot_service.result import Result
 
 
 def _load_bot_module(monkeypatch):
+    sys.modules.setdefault("docker", types.ModuleType("docker"))
+    if not hasattr(sys.modules["docker"], "from_env"):
+        sys.modules["docker"].from_env = lambda: object()
+    telegram_module = sys.modules.setdefault("telegram", types.ModuleType("telegram"))
+    if not hasattr(telegram_module, "Update"):
+        telegram_module.Update = object
+
+    telegram_ext_module = sys.modules.setdefault("telegram.ext", types.ModuleType("telegram.ext"))
+    if not hasattr(telegram_ext_module, "ApplicationBuilder"):
+        telegram_ext_module.ApplicationBuilder = object
+    if not hasattr(telegram_ext_module, "CommandHandler"):
+        telegram_ext_module.CommandHandler = object
+    if not hasattr(telegram_ext_module, "ContextTypes"):
+        telegram_ext_module.ContextTypes = types.SimpleNamespace(DEFAULT_TYPE=object)
+    if not hasattr(telegram_ext_module, "MessageHandler"):
+        telegram_ext_module.MessageHandler = object
+    if not hasattr(telegram_ext_module, "filters"):
+        telegram_ext_module.filters = types.SimpleNamespace(COMMAND=object())
     monkeypatch.delenv("BOT_HOST_ACTION_SOCKET", raising=False)
     monkeypatch.setattr("docker.from_env", lambda: object())
 
@@ -149,17 +171,17 @@ async def test_dynamic_action_command_uses_host_action_client(monkeypatch) -> No
             )
 
     bot.host_action_client = FakeHostActionClient()
-    bot.action_engine.register_action("server_uptime", policy=ActionPolicy(allowed_roles=("operator",)))
+    bot.action_engine.register_action("lms_ps", policy=ActionPolicy(allowed_roles=("operator",)))
     bot.action_engine.register_handler(
-        "server_uptime",
-        "host.server.uptime",
-        build_host_operation_handler("server.uptime"),
+        "lms_ps",
+        "host.server.lms_action",
+        build_host_operation_handler("server.lms_action"),
     )
 
     reply_text = AsyncMock()
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
-        message=SimpleNamespace(text="/server_uptime now", reply_text=reply_text),
+        message=SimpleNamespace(text="/lms_ps --json", reply_text=reply_text),
     )
     context = SimpleNamespace(args=[])
 
@@ -167,9 +189,75 @@ async def test_dynamic_action_command_uses_host_action_client(monkeypatch) -> No
 
     reply_text.assert_awaited_once()
     args, kwargs = reply_text.await_args
-    assert args[0].startswith("host:server.uptime:")
-    assert args[0].endswith(":now")
+    assert args[0].startswith("host:server.lms_action:")
+    assert args[0].endswith(":--json")
     assert kwargs.get("parse_mode") == "Markdown"
+
+
+async def test_dynamic_action_command_falls_back_to_plain_text_on_markdown_parse_error(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("operator",)})
+
+    class FakeHostActionClient:
+        async def invoke(self, operation_name, event_args, params=None):
+            return Result.success(
+                f'{{"operation":"{operation_name}","args":["{event_args.raw_args[0]}"]}}'
+            )
+
+    bot.host_action_client = FakeHostActionClient()
+    bot.action_engine.register_action("lms_ps", policy=ActionPolicy(allowed_roles=("operator",)))
+    bot.action_engine.register_handler(
+        "lms_ps",
+        "host.server.lms_action",
+        build_host_operation_handler("server.lms_action"),
+    )
+
+    reply_text = AsyncMock(
+        side_effect=[BadRequest("Can't parse entities: can't find end of the entity"), None]
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(text="/lms_ps --json", reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.dispatch_action_command(update, context)
+
+    assert reply_text.await_count == 2
+    first_args, first_kwargs = reply_text.await_args_list[0]
+    second_args, second_kwargs = reply_text.await_args_list[1]
+    assert first_args[0] == '{"operation":"server.lms_action","args":["--json"]}'
+    assert first_kwargs.get("parse_mode") == "Markdown"
+    assert second_args[0] == first_args[0]
+    assert second_kwargs == {}
+
+
+async def test_dynamic_action_command_rejects_too_many_user_args(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("operator",)})
+
+    async def handler(_event_args):
+        return Result.success("should-not-run")
+
+    bot.action_engine.register_action("server_uptime", policy=ActionPolicy(allowed_roles=("operator",)))
+    bot.action_engine.register_handler("server_uptime", "test.dynamic.limit", handler)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(
+            text="/server_uptime a b c d e f g h i j k",
+            reply_text=reply_text,
+        ),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.dispatch_action_command(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert args[0] == "❌ Invalid arguments."
+    assert kwargs == {}
 
 
 async def test_dynamic_action_command_ignores_reserved_commands(monkeypatch) -> None:
