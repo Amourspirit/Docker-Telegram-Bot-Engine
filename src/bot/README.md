@@ -14,6 +14,7 @@ This service runs a Telegram bot that can inspect and control Docker containers 
 - lists actions by tag with `/actions_by_tag <tag> [<tag> ...]`
 - shows action details with `/action_info <action_name>`
 - reloads action config with `/reload_actions`
+- applies configurable reply rendering through `reply_format`
 - ignores requests from Telegram users not listed in users config `users`
 - applies role-based checks per action from `/app/config/actions.*`
 - supports an action engine with staged handlers for each command
@@ -68,6 +69,32 @@ Host runner operations can also define approved optional params:
 - set `allowed_optional_params` in host-actions config for each operation
 - when `allow_user_args` is true, every Telegram-supplied arg must be included in `allowed_optional_params`
 - unapproved args are rejected and returned to Telegram as an error
+
+Reply formatting is configurable at two levels:
+
+- action-level `reply_format` in actions config
+- host operation-level `reply_format` in host-actions config
+
+Action-level `reply_format` supports:
+
+- string shorthand, for example `reply_format: json`
+- mapping form, for example `reply_format: {format: json, fenced: false, fence_lang: txt}`
+
+Supported format names:
+
+- `markdown`
+- `text`
+- `json` (fenced by default)
+- `yaml` (fenced by default)
+- `html`
+
+When multiple sources provide a format, precedence is:
+
+1. host operation resolved format from optional args
+2. action-level format
+3. default `markdown`
+
+If Telegram rejects Markdown entity parsing, the bot retries as plain text.
 
 If `/reload_actions` fails, the bot restores the last known good users/actions configuration snapshot in memory.
 

@@ -12,10 +12,13 @@ The current implementation uses Telegram polling. That means the container does 
 - Restart a container with `/restart <container-name>`
 - Read container logs with `/logs <container-name> [tail]`
 - List available commands with `/help`
+- List actions by tag with `/actions_by_tag <tag> [<tag> ...]`
 - Inspect action stages with `/action_info <action_name>`
 - Reload action config with `/reload_actions`
 - Run curated host actions such as `/server_uptime` through a local host runner
 - Restrict access and roles via `users` and `allowed_roles` in action config
+- Configure Telegram reply rendering per action with `reply_format` (for example `markdown`, `text`, `json`, `yaml`, `html`)
+- Configure host operation reply rendering by optional args with operation-level `reply_format` rules
 - Run the full stack through the Makefile
 - Use an event-driven action engine with config-loaded registrations
 
@@ -25,13 +28,27 @@ The current implementation uses Telegram polling. That means the container does 
 .
 ├── docker-compose.yaml
 ├── main.py
+├── config/
+│   ├── actions.example.yaml
+│   ├── users.example.yaml
+│   └── host-actions.example.yaml
 └── src/
- └── bot/
-  ├── Dockerfile
-  ├── main.py
-  ├── pyproject.toml
-  └── bot_service/
-   └── bot.py
+  ├── bot/
+  │   ├── Dockerfile
+  │   ├── main.py
+  │   ├── pyproject.toml
+  │   ├── bot_service/
+  │   └── tests/
+  ├── host-runner/
+  │   ├── main.py
+  │   ├── pyproject.toml
+  │   ├── host_runner/
+  │   └── tests/
+  └── config-builder/
+    ├── main.py
+    ├── pyproject.toml
+    ├── builder/
+    └── tests/
 ```
 
 ## Requirements
@@ -71,12 +88,20 @@ Notes:
 - Host runner operations are declared separately in `config/host-actions.example.yaml`.
 - Host runner operations can define `allowed_optional_params`; every Telegram-supplied arg must be listed there when `allow_user_args` is true.
 - If any Telegram-supplied arg is not approved in `allowed_optional_params`, the bot returns an error message to the Telegram client.
+- Action config supports action-level `reply_format`:
+  - string shorthand, for example `reply_format: json`
+  - object form, for example `reply_format: {format: json, fenced: false, fence_lang: txt}`
+- Supported action reply formats are `markdown`, `text`, `json`, `yaml`, and `html`.
+- Host operation config supports parameter-based `reply_format` selection. You can define a default and param matching rules (`single` and `ands`) to pick a format based on supplied optional params.
+- Reply format precedence is: host operation resolved format, then action-level format, then default `markdown`.
 
 ## How It Works
 
 The bot process starts inside the `telegram-c2-bot` container and uses long polling to receive updates from Telegram. It then uses the Docker Python SDK to query or control containers through the mounted Docker socket.
 
 For host-backed actions, the bot sends a small JSON request to a dedicated host runner process over TCP or Unix socket. The runner validates the configured operation and executes an approved host command, then returns the result text to the bot.
+
+The host runner can also return a `reply_format` hint that is resolved from operation optional params. The bot applies that format before sending the Telegram message.
 
 Current commands:
 
