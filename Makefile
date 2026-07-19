@@ -16,12 +16,49 @@ HOST_RUNNER_LOG := $(PROJECT_ROOT)storage/runner/host-runner.log
 
 help:
 	@echo "Targets:"
-	@echo "  make up               Start host runner and bot container"
-	@echo "  make down             Stop bot container and host runner"
-	@echo "  make restart          Restart both services"
-	@echo "  make logs             Tail bot container logs"
-	@echo "  make host-runner-logs Tail host runner log"
-	@echo "  make status           Show bot container and host runner status"
+	@echo "  make up                   Start host runner and bot container"
+	@echo "  make down                 Stop bot container and host runner"
+	@echo "  make restart              Restart both services"
+	@echo "  make logs                 Tail bot container logs"
+	@echo "  make host-runner-logs     Tail host runner log"
+	@echo "  make status               Show bot container and host runner status"
+	@echo "  make build-bot-actions    Build bot actions"
+	@echo "  make build-host-actions   Build host actions"
+	@echo "  make build-actions        Build both bot and host actions"
+
+build-bot-actions:
+	@if [ -d "$(PROJECT_ROOT)storage/templates/actions" ]; then \
+		cd "$(PROJECT_ROOT)src/config-builder" \
+		&& uv run python main.py \
+		--input-type actions \
+		--base-dir "$(PROJECT_ROOT)" \
+		--input "storage/templates/actions/*.{json,yaml,yml}" \
+		--output "$(PROJECT_ROOT)storage/config/bot/actions.yaml" \
+		--report-duplicates "$(PROJECT_ROOT)tmp/build/action-duplicates.json" \
+		--summary-json "$(PROJECT_ROOT)tmp/build/action-summary.json" \
+		&& echo "Actions built successfully. Output: storage/config/bot/actions.yaml" \
+		&& echo "Reports: tmp/build/action-duplicates.json" \
+		&& echo "Summary: tmp/build/action-summary.json" ; \
+	else \
+		echo "Error: $(PROJECT_ROOT)storage/templates/actions directory does not exist"; \
+	fi
+
+build-host-actions:
+	@if [ -d "$(PROJECT_ROOT)storage/templates/host-actions" ]; then \
+		cd "$(PROJECT_ROOT)src/config-builder" \
+		&& uv run python main.py \
+		--input-type host-actions \
+		--base-dir "$(PROJECT_ROOT)" \
+		--input "storage/templates/host-actions/*.{json,yaml,yml}" \
+		--output "$(PROJECT_ROOT)storage/config/host/host-actions.yaml" \
+		--report-duplicates "$(PROJECT_ROOT)tmp/build/host-action-duplicates.json" \
+		--summary-json "$(PROJECT_ROOT)tmp/build/host-action-summary.json" \
+		&& echo "Host actions built successfully. Output: storage/config/host/host-actions.yaml" \
+		&& echo "Reports: tmp/build/host-action-duplicates.json" \
+		&& echo "Summary: tmp/build/host-action-summary.json" ; \
+	else \
+		echo "Error: $(PROJECT_ROOT)storage/templates/host-actions directory does not exist"; \
+	fi
 
 up: start-host-runner
 	@mkdir -p "$(PROJECT_ROOT)storage/runner"
@@ -92,3 +129,6 @@ status:
 	else \
 		echo "Host runner: not running"; \
 	fi
+
+build-actions: build-bot-actions build-host-actions
+	@echo "All actions built successfully."
