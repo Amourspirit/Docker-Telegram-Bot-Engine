@@ -1,0 +1,96 @@
+actions:
+  status:
+    stop_on_failure: true
+    default_timeout_seconds: 5
+    allowed_roles:
+    - admin
+    - operator
+    tags:
+    - status
+    handlers:
+    - id: docker.status.collect
+      module: bot_service.actions.docker_actions
+      callable: status_collect_handler
+      stage: 0
+    - id: docker.status.render
+      module: bot_service.actions.docker_actions
+      callable: status_render_handler
+      stage: 1
+    - id: engine.status.runtime
+      module: bot_service.actions.docker_actions
+      callable: status_runtime_handler
+      stage: 2
+      stop_on_failure: false
+      timeout_seconds: 3
+    unregister: []
+  start:
+    stop_on_failure: true
+    allowed_roles:
+    - admin
+    handlers:
+    - id: docker.start.container
+      module: bot_service.actions.docker_actions
+      callable: start_handler
+      stage: 0
+      timeout_seconds: 10
+    unregister: []
+  stop:
+    stop_on_failure: true
+    allowed_roles:
+    - admin
+    handlers:
+    - id: docker.stop.container
+      module: bot_service.actions.docker_actions
+      callable: stop_handler
+      stage: 0
+      timeout_seconds: 10
+    unregister: []
+  restart:
+    stop_on_failure: true
+    allowed_roles:
+    - admin
+    handlers:
+    - id: docker.restart.container
+      module: bot_service.actions.docker_actions
+      callable: restart_handler
+      stage: 0
+      timeout_seconds: 15
+    unregister: []
+  logs:
+    stop_on_failure: true
+    allowed_roles:
+    - admin
+    - operator
+    tags:
+    - logs
+    handlers:
+    - id: docker.logs.container
+      module: bot_service.actions.docker_actions
+      callable: logs_handler
+      stage: 0
+      timeout_seconds: 10
+    unregister: []
+  server_uptime:
+    stop_on_failure: true
+    allowed_roles:
+    - admin
+    - operator
+    handlers:
+    - id: host.server.uptime
+      target: host
+      operation: server.uptime
+      stage: 0
+      timeout_seconds: 5
+    unregister: []
+  server_date:
+    stop_on_failure: true
+    allowed_roles:
+    - admin
+    - operator
+    handlers:
+    - id: host.server.date
+      target: host
+      operation: server.date
+      stage: 0
+      timeout_seconds: 5
+    unregister: []

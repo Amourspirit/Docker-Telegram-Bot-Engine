@@ -1,5 +1,0 @@
-users:
-  "123456789":
-    roles:
-      - admin
-      - operator
