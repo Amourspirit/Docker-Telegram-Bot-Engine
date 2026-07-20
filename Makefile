@@ -12,11 +12,13 @@ HOST_ACTIONS_PORT ?= 8787
 HOST_RUNNER_PID_FILE := $(PROJECT_ROOT)storage/runner/host-runner.pid
 HOST_RUNNER_LOG := $(PROJECT_ROOT)storage/runner/host-runner.log
 ACTIONS_BASE_DIR ?= $(PROJECT_ROOT)
-BOT_ACTIONS_INPUT_GLOB ?= storage/templates/actions/*.{json,yaml,yml}
+BOT_ACTIONS_INPUT_DIR ?= storage/templates/actions
+BOT_ACTIONS_INPUT_GLOB ?= $(BOT_ACTIONS_INPUT_DIR)/*.{json,yaml,yml}
 BOT_ACTIONS_OUTPUT_PATH ?= storage/config/bot/actions.yaml
 BOT_ACTIONS_DUPLICATES_REPORT ?= tmp/build/action-duplicates.json
 BOT_ACTIONS_SUMMARY_JSON ?= tmp/build/action-summary.json
-HOST_ACTIONS_INPUT_GLOB ?= storage/templates/host-actions/*.{json,yaml,yml}
+HOST_ACTIONS_INPUT_DIR ?= storage/templates/host-actions
+HOST_ACTIONS_INPUT_GLOB ?= $(HOST_ACTIONS_INPUT_DIR)/*.{json,yaml,yml}
 HOST_ACTIONS_OUTPUT_PATH ?= storage/config/host/host-actions.yaml
 HOST_ACTIONS_DUPLICATES_REPORT ?= tmp/build/host-action-duplicates.json
 HOST_ACTIONS_SUMMARY_JSON ?= tmp/build/host-action-summary.json
@@ -36,7 +38,7 @@ help:
 	@echo "  make build-actions        Build both bot and host actions"
 
 build-bot-actions:
-	@if [ -d "$(PROJECT_ROOT)storage/templates/actions" ]; then \
+	@if [ -d "$(BOT_ACTIONS_INPUT_DIR)" ]; then \
 		cd "$(PROJECT_ROOT)src/config-builder" \
 		&& uv run python main.py \
 		--input-type actions \
@@ -49,11 +51,11 @@ build-bot-actions:
 		&& echo "Reports: $(BOT_ACTIONS_DUPLICATES_REPORT)" \
 		&& echo "Summary: $(BOT_ACTIONS_SUMMARY_JSON)" ; \
 	else \
-		echo "Error: $(PROJECT_ROOT)storage/templates/actions directory does not exist"; \
+		echo "Error: $(BOT_ACTIONS_INPUT_DIR) directory does not exist"; \
 	fi
 
 build-host-actions:
-	@if [ -d "$(PROJECT_ROOT)storage/templates/host-actions" ]; then \
+	@if [ -d "$(HOST_ACTIONS_INPUT_DIR)" ]; then \
 		cd "$(PROJECT_ROOT)src/config-builder" \
 		&& uv run python main.py \
 		--input-type host-actions \
@@ -66,7 +68,7 @@ build-host-actions:
 		&& echo "Reports: $(HOST_ACTIONS_DUPLICATES_REPORT)" \
 		&& echo "Summary: $(HOST_ACTIONS_SUMMARY_JSON)" ; \
 	else \
-		echo "Error: $(PROJECT_ROOT)storage/templates/host-actions directory does not exist"; \
+		echo "Error: $(HOST_ACTIONS_INPUT_DIR) directory does not exist"; \
 	fi
 
 up: start-host-runner
