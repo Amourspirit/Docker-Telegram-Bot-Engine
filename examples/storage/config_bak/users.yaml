@@ -1,6 +1,6 @@
 users:
   # Replace with your real Telegram numeric user IDs.
-  "123456789":
+  "1282061341":
     roles:
       - admin
       - operator

@@ -1,0 +1,45 @@
+operations:
+  server.lms_ps:
+    command:
+      - "$HOME/.lmstudio/bin/lms"
+      - "{{subcmd}}"
+    timeout_seconds: 5
+    allow_user_args: true
+    allowed_placeholders:
+      - subcmd
+    allowed_optional_params:
+      - --json
+    # Reply as fenced JSON when the user passes --json, otherwise Markdown.
+    reply_format:
+      - default: markdown
+        json:
+          - single:
+              - --json
+
+  server.lms_ls:
+    command:
+      - "$HOME/.lmstudio/bin/lms"
+      - ls
+    timeout_seconds: 5
+    allow_user_args: true
+    allowed_optional_params:
+      - --llm
+      - --embedding
+      - --variants
+      - --json
+    # Reply as fenced JSON when the user passes --json, otherwise Markdown.
+    reply_format:
+      - default: markdown
+        json:
+          - single:
+              - --json
+          - ands:
+              - and:
+                  - --embedding
+                  - --json
+              - and:
+                  - --llm
+                  - --json
+              - and:
+                  - --variants
+                  - --json

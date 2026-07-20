@@ -1,0 +1,10 @@
+operations:
+  server.stack_action:
+    command:
+      - /bin/bash
+      - -lc
+      - source "$HOST_PROJECT_ROOT/storage/scripts/stack.sh" && stack_cmd "{{action}}"
+    timeout_seconds: 15
+    allow_user_args: false
+    allowed_placeholders:
+      - action

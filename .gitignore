@@ -31,6 +31,7 @@ tmp/
 
 # Project storage
 storage/
+!examples/storage/
 
 
 

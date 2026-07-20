@@ -1,0 +1,676 @@
+actions:
+  status:
+    stop_on_failure: true
+    default_timeout_seconds: 5
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - status
+    handlers:
+      - id: docker.status.collect
+        module: bot_service.actions.docker_actions
+        callable: status_collect_handler
+        stage: 0
+      - id: docker.status.render
+        module: bot_service.actions.docker_actions
+        callable: status_render_handler
+        stage: 1
+      - id: engine.status.runtime
+        module: bot_service.actions.docker_actions
+        callable: status_runtime_handler
+        stage: 2
+        stop_on_failure: false
+        timeout_seconds: 3
+    unregister: []
+
+  start:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    handlers:
+      - id: docker.start.container
+        module: bot_service.actions.docker_actions
+        callable: start_handler
+        stage: 0
+        timeout_seconds: 10
+    unregister: []
+
+  stop:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    handlers:
+      - id: docker.stop.container
+        module: bot_service.actions.docker_actions
+        callable: stop_handler
+        stage: 0
+        timeout_seconds: 10
+    unregister: []
+
+  restart:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    handlers:
+      - id: docker.restart.container
+        module: bot_service.actions.docker_actions
+        callable: restart_handler
+        stage: 0
+        timeout_seconds: 15
+    unregister: []
+
+  logs:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - logs
+    handlers:
+      - id: docker.logs.container
+        module: bot_service.actions.docker_actions
+        callable: logs_handler
+        stage: 0
+        timeout_seconds: 10
+    unregister: []
+
+  server_uptime:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+      - operator
+    handlers:
+      - id: host.server.uptime
+        target: host
+        operation: server.uptime
+        stage: 0
+        timeout_seconds: 5
+    unregister: []
+
+  server_date:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+      - operator
+    handlers:
+      - id: host.server.date
+        target: host
+        operation: server.date
+        stage: 0
+        timeout_seconds: 5
+    unregister: []
+
+  cf_obsidian_status:
+    stop_on_failure: true
+    aliases:
+      - cf_status_obsidian
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - obsidian
+      - route
+      - status
+    handlers:
+      - id: host.server.obsidian_status
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_OBSIDIAN_DOMAIN_NAME
+          action: status
+    unregister: []
+  cf_obsidian_enable:
+    stop_on_failure: true
+    aliases:
+      - cf_enable_obsidian
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - obsidian
+      - route
+    handlers:
+      - id: host.server.obsidian_enable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_OBSIDIAN_DOMAIN_NAME
+          action: enable
+    unregister: []
+  cf_obsidian_disable:
+    stop_on_failure: true
+    aliases:
+      - cf_disable_obsidian
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - obsidian
+      - route
+    handlers:
+      - id: host.server.obsidian_disable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 15
+        params:
+          domain_var: $CF_OBSIDIAN_DOMAIN_NAME
+          action: disable
+    unregister: []
+  cf_obsidian_domain:
+    stop_on_failure: true
+    aliases:
+      - cf_domain_obsidian
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - domain
+    handlers:
+      - id: host.server.obsidian_domain
+        target: host
+        operation: server.cf_domain
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_OBSIDIAN_DOMAIN_NAME
+    unregister: []
+  cf_obsidian_url:
+    stop_on_failure: true
+    aliases:
+      - cf_url_obsidian
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - obsidian
+      - route
+      - url
+    handlers:
+      - id: host.server.obsidian_url
+        target: host
+        operation: server.cf_url
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_OBSIDIAN_DOMAIN_NAME
+    unregister: []
+
+  cf_docker_status:
+    stop_on_failure: true
+    aliases:
+      - cf_status_docker
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - status
+    handlers:
+      - id: host.server.docker_status
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_DOCKER_DOMAIN_NAME
+          action: status
+    unregister: []
+  cf_docker_enable:
+    stop_on_failure: true
+    aliases:
+      - cf_enable_docker
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.docker_enable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_DOCKER_DOMAIN_NAME
+          action: enable
+    unregister: []
+  cf_docker_disable:
+    stop_on_failure: true
+    aliases:
+      - cf_disable_docker
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.docker_disable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 15
+        params:
+          domain_var: $CF_DOCKER_DOMAIN_NAME
+          action: disable
+    unregister: []
+  cf_docker_domain:
+    stop_on_failure: true
+    aliases:
+      - cf_domain_docker
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - domain
+    handlers:
+      - id: host.server.cf_docker_domain
+        target: host
+        operation: server.cf_domain
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_DOCKER_DOMAIN_NAME
+    unregister: []
+  cf_docker_url:
+    stop_on_failure: true
+    aliases:
+      - cf_url_docker
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - url
+    handlers:
+      - id: host.server.cf_docker_url
+        target: host
+        operation: server.cf_url
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_DOCKER_DOMAIN_NAME
+    unregister: []
+
+  cf_grafana_status:
+    stop_on_failure: true
+    aliases:
+      - cf_status_grafana
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - status
+    handlers:
+      - id: host.server.grafana_status
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+          action: status
+    unregister: []
+  cf_grafana_enable:
+    stop_on_failure: true
+    aliases:
+      - cf_enable_grafana
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.grafana_enable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+          action: enable
+    unregister: []
+  cf_grafana_disable:
+    stop_on_failure: true
+    aliases:
+      - cf_disable_grafana
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.grafana_disable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 15
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+          action: disable
+    unregister: []
+  cf_grafana_domain:
+    stop_on_failure: true
+    aliases:
+      - cf_domain_grafana
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - domain
+    handlers:
+      - id: host.server.cf_grafana_domain
+        target: host
+        operation: server.cf_domain
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+    unregister: []
+  cf_grafana_url:
+    stop_on_failure: true
+    aliases:
+      - cf_url_grafana
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - url
+    handlers:
+      - id: host.server.cf_grafana_url
+        target: host
+        operation: server.cf_url
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+    unregister: []
+
+  cf_webui_status:
+    stop_on_failure: true
+    aliases:
+      - cf_status_webui
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - status
+    handlers:
+      - id: host.server.webui_status
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+          action: status
+    unregister: []
+  cf_webui_enable:
+    stop_on_failure: true
+    aliases:
+      - cf_enable_webui
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.webui_enable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+          action: enable
+    unregister: []
+  cf_webui_disable:
+    stop_on_failure: true
+    aliases:
+      - cf_disable_webui
+    default_timeout_seconds: 16
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.webui_disable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 15
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+          action: disable
+    unregister: []
+  cf_webui_domain:
+    stop_on_failure: true
+    aliases:
+      - cf_domain_webui
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - domain
+    handlers:
+      - id: host.server.cf_webui_domain
+        target: host
+        operation: server.cf_domain
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+    unregister: []
+  cf_webui_url:
+    stop_on_failure: true
+    aliases:
+      - cf_url_webui
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - url
+    handlers:
+      - id: host.server.cf_webui_url
+        target: host
+        operation: server.cf_url
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+    unregister: []
+
+  cf_stack_status:
+    stop_on_failure: true
+    default_timeout_seconds: 8
+    aliases:
+      - cf_status_stack
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - status
+    handlers:
+      - id: host.server.stack_status
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+          action: status
+      - id: host.server.grafana_status
+        target: host
+        operation: server.cf_action
+        stage: 1
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+          action: status
+    unregister: []
+  cf_stack_enable:
+    stop_on_failure: true
+    aliases:
+      - cf_enable_stack
+    default_timeout_seconds: 8
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.stack_enable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+          action: enable
+      - id: host.server.grafana_enable
+        target: host
+        operation: server.cf_action
+        stage: 1
+        timeout_seconds: 8
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+          action: enable
+    unregister: []
+  cf_stack_disable:
+    stop_on_failure: true
+    aliases:
+      - cf_disable_stack
+    default_timeout_seconds: 8
+    allowed_roles:
+      - admin
+    tags:
+      - cloudflare
+      - docker
+      - route
+    handlers:
+      - id: host.server.stack_disable
+        target: host
+        operation: server.cf_action
+        stage: 0
+        timeout_seconds: 15
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+          action: disable
+      - id: host.server.grafana_disable
+        target: host
+        operation: server.cf_action
+        stage: 1
+        timeout_seconds: 15
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+          action: disable
+    unregister: []
+  cf_stack_domain:
+    stop_on_failure: true
+    aliases:
+      - cf_domain_stack
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - domain
+    handlers:
+      - id: host.server.cf_stack_domain
+        target: host
+        operation: server.cf_domain
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+      - id: host.server.cf_grafana_domain
+        target: host
+        operation: server.cf_domain
+        stage: 1
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+    unregister: []
+  cf_stack_url:
+    stop_on_failure: true
+    aliases:
+      - cf_url_stack
+    allowed_roles:
+      - admin
+      - operator
+    tags:
+      - cloudflare
+      - docker
+      - route
+      - url
+    handlers:
+      - id: host.server.cf_stack_url
+        target: host
+        operation: server.cf_url
+        stage: 0
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_UI_DOMAIN_NAME
+      - id: host.server.cf_grafana_url
+        target: host
+        operation: server.cf_url
+        stage: 1
+        timeout_seconds: 5
+        params:
+          domain_var: $CF_GRAFANA_DOMAIN_NAME
+    unregister: []

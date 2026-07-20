@@ -1,0 +1,37 @@
+actions:
+  logs_syslog:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - info
+      - logs
+    handlers:
+      - id: host.server.logs_syslog
+        target: host
+        operation: server.logs_action
+        stage: 0
+        timeout_seconds: 5
+        params:
+          lines: "30"
+          log_path: /var/log/system.log
+    unregister: []
+
+  logs_lmstudio:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - info
+      - logs
+      - lmstudio
+    handlers:
+      - id: host.server.logs_lmstudio
+        target: host
+        operation: server.logs_action
+        stage: 0
+        timeout_seconds: 5
+        params:
+          lines: "30"
+          log_path: ~/Library/Logs/LM Studio/main.log
+    unregister: []

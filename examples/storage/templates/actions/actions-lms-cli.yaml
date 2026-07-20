@@ -1,0 +1,31 @@
+actions:
+  lms_ps:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - lms
+      - llm
+    handlers:
+      - id: host.server.lms_ps
+        target: host
+        operation: server.lms_ps
+        stage: 0
+        timeout_seconds: 8
+        params:
+          subcmd: ps
+    unregister: []
+  lms_ls:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - lms
+      - llm
+    handlers:
+      - id: host.server.lms_ls
+        target: host
+        operation: server.lms_ls
+        stage: 0
+        timeout_seconds: 8
+    unregister: []

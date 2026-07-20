@@ -1,4 +1,7 @@
-# !/usr/bin/env bash
+# This is a helper script to manage Cloudflare DNS records for various services.
+# It calls a `tunnel_route.sh` script with appropriate parameters to perform actions on DNS records.
+# Not the complete script here, for example purposes.
+
 
 CF_OBSIDIAN_DOMAIN_NAME="sync-data.example.com"
 CF_DOCKER_DOMAIN_NAME="dock.example.com"

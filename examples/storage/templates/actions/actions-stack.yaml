@@ -1,0 +1,41 @@
+actions:
+  spiral_stack_status:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - stack
+      - status
+    handlers:
+      - id: host.server.spiral_stack_status
+        target: host
+        operation: server.stack_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          action: stack-status
+    reply_format:
+      format: markdown
+      fenced: true
+      fence_lang: text
+    unregister: []
+  spiral_stack_help:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - stack
+      - help
+    handlers:
+      - id: host.server.spiral_stack_help
+        target: host
+        operation: server.stack_action
+        stage: 0
+        timeout_seconds: 8
+        params:
+          action: help
+    reply_format:
+      format: markdown
+      fenced: true
+      fence_lang: text
+    unregister: []

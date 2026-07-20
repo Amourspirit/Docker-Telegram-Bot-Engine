@@ -1,0 +1,13 @@
+operations:
+  server.logs_action:
+    command:
+      - tail
+      - -n
+      - "{{lines}}"
+      - "{{log_path}}"
+    timeout_seconds: 5
+    allow_user_args: false
+    allowed_placeholders:
+      - lines
+      - log_path
+    

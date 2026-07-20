@@ -1,0 +1,6 @@
+users:
+  "1234567890":  # Replace with the actual Telegram user ID
+    name: "Example User"  # Replace with any name you want to associate with this user
+    roles:
+      - admin
+      - operator
