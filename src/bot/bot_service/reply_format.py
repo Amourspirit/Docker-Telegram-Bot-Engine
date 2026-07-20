@@ -21,6 +21,7 @@ _FORMAT_REGISTRY: dict[str, ReplyFormat] = {
     "json": ReplyFormat(name="json", parse_mode="Markdown", fenced=True, fence_lang="json"),
     "yaml": ReplyFormat(name="yaml", parse_mode="Markdown", fenced=True, fence_lang="yaml"),
     "html": ReplyFormat(name="html", parse_mode="HTML", fenced=False),
+    "fenced-text": ReplyFormat(name="fenced-text", parse_mode="Markdown", fenced=True, fence_lang="text"),
 }
 
 DEFAULT_REPLY_FORMAT = _FORMAT_REGISTRY["markdown"]
