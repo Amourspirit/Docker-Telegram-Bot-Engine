@@ -80,7 +80,7 @@ def collect_input_files(
                     resolved.add(str(path))
 
     if not resolved:
-        raise ValueError("No supported input files were found (.json, .yaml, .yml)")
+        raise ValueError(f"No supported input files were found (.json, .yaml, .yml) in the provided sources: {tokens} for base directory: {base_dir}")
 
     return [Path(item) for item in sorted(resolved)]
 

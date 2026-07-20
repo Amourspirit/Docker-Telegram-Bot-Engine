@@ -11,6 +11,15 @@ HOST_ACTIONS_HOST ?= 0.0.0.0
 HOST_ACTIONS_PORT ?= 8787
 HOST_RUNNER_PID_FILE := $(PROJECT_ROOT)storage/runner/host-runner.pid
 HOST_RUNNER_LOG := $(PROJECT_ROOT)storage/runner/host-runner.log
+ACTIONS_BASE_DIR ?= $(PROJECT_ROOT)
+BOT_ACTIONS_INPUT_GLOB ?= storage/templates/actions/*.{json,yaml,yml}
+BOT_ACTIONS_OUTPUT_PATH ?= storage/config/bot/actions.yaml
+BOT_ACTIONS_DUPLICATES_REPORT ?= tmp/build/action-duplicates.json
+BOT_ACTIONS_SUMMARY_JSON ?= tmp/build/action-summary.json
+HOST_ACTIONS_INPUT_GLOB ?= storage/templates/host-actions/*.{json,yaml,yml}
+HOST_ACTIONS_OUTPUT_PATH ?= storage/config/host/host-actions.yaml
+HOST_ACTIONS_DUPLICATES_REPORT ?= tmp/build/host-action-duplicates.json
+HOST_ACTIONS_SUMMARY_JSON ?= tmp/build/host-action-summary.json
 
 .PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status
 
@@ -31,14 +40,14 @@ build-bot-actions:
 		cd "$(PROJECT_ROOT)src/config-builder" \
 		&& uv run python main.py \
 		--input-type actions \
-		--base-dir "$(PROJECT_ROOT)" \
-		--input "storage/templates/actions/*.{json,yaml,yml}" \
-		--output "$(PROJECT_ROOT)storage/config/bot/actions.yaml" \
-		--report-duplicates "$(PROJECT_ROOT)tmp/build/action-duplicates.json" \
-		--summary-json "$(PROJECT_ROOT)tmp/build/action-summary.json" \
-		&& echo "Actions built successfully. Output: storage/config/bot/actions.yaml" \
-		&& echo "Reports: tmp/build/action-duplicates.json" \
-		&& echo "Summary: tmp/build/action-summary.json" ; \
+		--base-dir "$(ACTIONS_BASE_DIR)" \
+		--input "$(BOT_ACTIONS_INPUT_GLOB)" \
+		--output "$(BOT_ACTIONS_OUTPUT_PATH)" \
+		--report-duplicates "$(BOT_ACTIONS_DUPLICATES_REPORT)" \
+		--summary-json "$(BOT_ACTIONS_SUMMARY_JSON)" \
+		&& echo "Actions built successfully. Output: $(BOT_ACTIONS_OUTPUT_PATH)" \
+		&& echo "Reports: $(BOT_ACTIONS_DUPLICATES_REPORT)" \
+		&& echo "Summary: $(BOT_ACTIONS_SUMMARY_JSON)" ; \
 	else \
 		echo "Error: $(PROJECT_ROOT)storage/templates/actions directory does not exist"; \
 	fi
@@ -48,14 +57,14 @@ build-host-actions:
 		cd "$(PROJECT_ROOT)src/config-builder" \
 		&& uv run python main.py \
 		--input-type host-actions \
-		--base-dir "$(PROJECT_ROOT)" \
-		--input "storage/templates/host-actions/*.{json,yaml,yml}" \
-		--output "$(PROJECT_ROOT)storage/config/host/host-actions.yaml" \
-		--report-duplicates "$(PROJECT_ROOT)tmp/build/host-action-duplicates.json" \
-		--summary-json "$(PROJECT_ROOT)tmp/build/host-action-summary.json" \
-		&& echo "Host actions built successfully. Output: storage/config/host/host-actions.yaml" \
-		&& echo "Reports: tmp/build/host-action-duplicates.json" \
-		&& echo "Summary: tmp/build/host-action-summary.json" ; \
+		--base-dir "$(ACTIONS_BASE_DIR)" \
+		--input "$(HOST_ACTIONS_INPUT_GLOB)" \
+		--output "$(HOST_ACTIONS_OUTPUT_PATH)" \
+		--report-duplicates "$(HOST_ACTIONS_DUPLICATES_REPORT)" \
+		--summary-json "$(HOST_ACTIONS_SUMMARY_JSON)" \
+		&& echo "Host actions built successfully. Output: $(HOST_ACTIONS_OUTPUT_PATH)" \
+		&& echo "Reports: $(HOST_ACTIONS_DUPLICATES_REPORT)" \
+		&& echo "Summary: $(HOST_ACTIONS_SUMMARY_JSON)" ; \
 	else \
 		echo "Error: $(PROJECT_ROOT)storage/templates/host-actions directory does not exist"; \
 	fi
