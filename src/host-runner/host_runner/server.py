@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 4000
 MAX_USER_ARGS = 10
 MAX_USER_ARG_LENGTH = 256
+MAX_TIMEOUT_SECONDS = 600
 PLACEHOLDER_PATTERN = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
 
 
@@ -59,6 +60,21 @@ class HostActionRunner:
 
             if any(ord(character) < 32 or ord(character) == 127 for character in raw_arg):
                 return f"Argument {index} contains control characters"
+
+        return None
+
+    def _validate_timeout_seconds(self, timeout_seconds: float | None) -> str | None:
+        if timeout_seconds is None:
+            return None
+
+        if not isinstance(timeout_seconds, (int, float)):
+            return "timeout_seconds must be a number"
+
+        if timeout_seconds <= 0:
+            return "timeout_seconds must be positive"
+
+        if timeout_seconds > MAX_TIMEOUT_SECONDS:
+            return f"timeout_seconds must not exceed {MAX_TIMEOUT_SECONDS} seconds"
 
         return None
 
@@ -127,6 +143,11 @@ class HostActionRunner:
             if optional_param_error is not None:
                 return {"ok": False, "error": optional_param_error}
 
+        request_timeout_seconds = payload.get("timeout_seconds")
+        timeout_validation_error = self._validate_timeout_seconds(request_timeout_seconds)
+        if timeout_validation_error is not None:
+            return {"ok": False, "error": timeout_validation_error}
+
         try:
             command = self._apply_placeholder_substitution(
                 operation_name=operation_name,
@@ -139,7 +160,8 @@ class HostActionRunner:
         if definition.allow_user_args:
             command.extend(normalized_raw_args)
 
-        response = await self._run_command(command, definition.timeout_seconds)
+        effective_timeout = request_timeout_seconds if request_timeout_seconds is not None else definition.timeout_seconds
+        response = await self._run_command(command, effective_timeout)
 
         if response.get("ok") and definition.reply_format is not None:
             present_params = set(normalized_raw_args)

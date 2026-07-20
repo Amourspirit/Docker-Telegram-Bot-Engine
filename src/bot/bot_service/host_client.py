@@ -24,6 +24,7 @@ class HostActionClient:
         operation_name: str,
         event_args: EventArgs,
         params: dict[str, str] | None = None,
+        timeout_seconds: float | None = None,
     ) -> Result[str | None, BaseException]:
         if not self.endpoint and not self.socket_path:
             return Result.failure(
@@ -50,6 +51,8 @@ class HostActionClient:
                 "correlation_id": event_args.correlation_id,
                 "params": params,
             }
+            if timeout_seconds is not None:
+                request_payload["timeout_seconds"] = timeout_seconds
             writer.write(json.dumps(request_payload).encode("utf-8") + b"\n")
             await writer.drain()
 
@@ -118,6 +121,7 @@ def _parse_endpoint(endpoint: str) -> tuple[str, int]:
 def build_host_operation_handler(
     operation_name: str,
     params: dict[str, str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> Callable[[EventArgs], Awaitable[Result[str | None, BaseException | None]]]:
     async def _handler(event_args: EventArgs) -> Result[str | None, BaseException | None]:
         client = event_args.shared_state.get("host_action_client")
@@ -127,6 +131,6 @@ def build_host_operation_handler(
                 HostActionError("Host action client is not available in event shared_state")
             )
 
-        return await invoke(operation_name, event_args, params=params)
+        return await invoke(operation_name, event_args, params=params, timeout_seconds=timeout_seconds)
 
     return _handler

@@ -144,6 +144,7 @@ async def test_load_actions_from_yaml_registers_host_handlers() -> None:
             operation_name: str,
             event_args: EventArgs,
             params: dict[str, str] | None = None,
+            timeout_seconds: float | None = None,
         ):
             param_text = ""
             if params:
@@ -193,6 +194,7 @@ async def test_load_actions_from_yaml_registers_host_handlers_with_params() -> N
             operation_name: str,
             event_args: EventArgs,
             params: dict[str, str] | None = None,
+            timeout_seconds: float | None = None,
         ):
             assert params == {"domain_var": "CF_SPIRAL_UI_DOMAIN_NAME"}
             return Result.success(

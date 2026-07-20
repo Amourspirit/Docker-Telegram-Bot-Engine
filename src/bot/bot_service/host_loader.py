@@ -56,7 +56,12 @@ def _resolve_handler_callback(handler: dict[str, Any]) -> Any:
     if target == "host":
         operation_name = handler["operation"]
         operation_params = _normalize_handler_params(handler)
-        return build_host_operation_handler(operation_name, params=operation_params)
+        timeout_seconds = handler.get("timeout_seconds")
+        return build_host_operation_handler(
+            operation_name,
+            params=operation_params,
+            timeout_seconds=timeout_seconds,
+        )
 
     raise ValueError(f"Unsupported handler target: {target}")
 
