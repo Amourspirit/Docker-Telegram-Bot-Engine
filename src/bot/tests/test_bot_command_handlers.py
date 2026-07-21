@@ -61,6 +61,28 @@ async def test_help_command_replies_without_parse_mode(monkeypatch) -> None:
     assert kwargs == {}
 
 
+async def test_help_command_chunks_long_reply(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    long_help_text = "h" * (bot.TELEGRAM_REPLY_CHUNK_SIZE + 25)
+    monkeypatch.setattr(bot, "build_help_text", lambda *_args, **_kwargs: long_help_text)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.help_command(update, context)
+
+    assert reply_text.await_count == 2
+    first_args, first_kwargs = reply_text.await_args_list[0]
+    second_args, second_kwargs = reply_text.await_args_list[1]
+    assert first_kwargs == {}
+    assert second_kwargs == {}
+    assert first_args[0] + second_args[0] == long_help_text
+
+
 async def test_action_info_replies_without_parse_mode(monkeypatch) -> None:
     bot = _load_bot_module(monkeypatch)
 
@@ -77,6 +99,28 @@ async def test_action_info_replies_without_parse_mode(monkeypatch) -> None:
     args, kwargs = reply_text.await_args
     assert "Action: /status" in args[0]
     assert kwargs == {}
+
+
+async def test_action_info_chunks_long_reply(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    long_info_text = "i" * (bot.TELEGRAM_REPLY_CHUNK_SIZE + 25)
+    monkeypatch.setattr(bot, "build_action_info_text", lambda *_args, **_kwargs: long_info_text)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=["status"])
+
+    await bot.action_info(update, context)
+
+    assert reply_text.await_count == 2
+    first_args, first_kwargs = reply_text.await_args_list[0]
+    second_args, second_kwargs = reply_text.await_args_list[1]
+    assert first_kwargs == {}
+    assert second_kwargs == {}
+    assert first_args[0] + second_args[0] == long_info_text
 
 
 async def test_help_command_ignores_unauthorized_user(monkeypatch) -> None:
@@ -192,6 +236,34 @@ async def test_dynamic_action_command_uses_host_action_client(monkeypatch) -> No
     assert args[0].startswith("host:server.lms_action:")
     assert args[0].endswith(":--json")
     assert kwargs.get("parse_mode") == "Markdown"
+
+
+async def test_dynamic_action_command_chunks_long_reply(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("operator",)})
+
+    async def handler(_event_args):
+        return Result.success("x" * (bot.TELEGRAM_REPLY_CHUNK_SIZE + 25))
+
+    bot.action_engine.register_action("server_uptime", policy=ActionPolicy(allowed_roles=("operator",)))
+    bot.action_engine.register_handler("server_uptime", "test.dynamic", handler)
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(text="/server_uptime", reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.dispatch_action_command(update, context)
+
+    assert reply_text.await_count == 2
+    first_args, first_kwargs = reply_text.await_args_list[0]
+    second_args, second_kwargs = reply_text.await_args_list[1]
+    assert first_kwargs.get("parse_mode") == "Markdown"
+    assert second_kwargs.get("parse_mode") == "Markdown"
+    assert len(first_args[0]) == bot.TELEGRAM_REPLY_CHUNK_SIZE
+    assert first_args[0] + second_args[0] == "x" * (bot.TELEGRAM_REPLY_CHUNK_SIZE + 25)
 
 
 async def test_dynamic_action_command_falls_back_to_plain_text_on_markdown_parse_error(monkeypatch) -> None:

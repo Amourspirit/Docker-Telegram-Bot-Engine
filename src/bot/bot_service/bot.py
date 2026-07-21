@@ -3,6 +3,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
+from typing import Any
 
 import docker
 from telegram import Update
@@ -32,6 +33,7 @@ RESERVED_UNTAGGED_FILTERS = {"none", "unknown"}
 ADMIN_ROLE = "admin"
 MAX_USER_ARGS = 10
 MAX_USER_ARG_LENGTH = 256
+TELEGRAM_REPLY_CHUNK_SIZE = 4000
 
 # Initialize Docker client (connects via the mounted socket)
 docker_client = docker.from_env()
@@ -59,6 +61,89 @@ LAST_KNOWN_GOOD_USERS_CONFIG_PATH: Path | None = None
 
 def _is_markdown_parse_error(error: BadRequest) -> bool:
     return "Can't parse entities" in str(error)
+
+
+def _is_message_too_long_error(error: BadRequest) -> bool:
+    return "Message is too long" in str(error)
+
+
+def _split_reply_chunks(text: str, max_chars: int = TELEGRAM_REPLY_CHUNK_SIZE) -> list[str]:
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive")
+
+    if not text:
+        return [""]
+
+    chunks: list[str] = []
+    current = ""
+
+    for line in text.splitlines(keepends=True):
+        if len(line) > max_chars:
+            if current:
+                chunks.append(current)
+                current = ""
+
+            offset = 0
+            while offset < len(line):
+                chunks.append(line[offset : offset + max_chars])
+                offset += max_chars
+            continue
+
+        if len(current) + len(line) <= max_chars:
+            current += line
+            continue
+
+        if current:
+            chunks.append(current)
+        current = line
+
+    if current:
+        chunks.append(current)
+
+    return chunks or [""]
+
+
+async def _send_reply_chunks(
+    message: Any,
+    text: str,
+    parse_mode: str | None = None,
+    allow_markdown_fallback: bool = False,
+    fallback_label: str = "reply",
+) -> None:
+    for chunk in _split_reply_chunks(text):
+        try:
+            if parse_mode is None:
+                await message.reply_text(chunk)
+            else:
+                await message.reply_text(chunk, parse_mode=parse_mode)
+        except BadRequest as exc:
+            if allow_markdown_fallback and parse_mode is not None and _is_markdown_parse_error(exc):
+                logging.warning(
+                    "Falling back to plain-text chunk for %s after Markdown parse failure.",
+                    fallback_label,
+                )
+                await message.reply_text(chunk)
+                continue
+
+            if _is_message_too_long_error(exc) and len(chunk) > 1:
+                midpoint = len(chunk) // 2
+                await _send_reply_chunks(
+                    message,
+                    chunk[:midpoint],
+                    parse_mode=parse_mode,
+                    allow_markdown_fallback=allow_markdown_fallback,
+                    fallback_label=fallback_label,
+                )
+                await _send_reply_chunks(
+                    message,
+                    chunk[midpoint:],
+                    parse_mode=parse_mode,
+                    allow_markdown_fallback=allow_markdown_fallback,
+                    fallback_label=fallback_label,
+                )
+                continue
+
+            raise
 
 
 def _resolve_config_path(candidates: tuple[Path, ...], config_label: str) -> Result[Path, BaseException]:
@@ -331,17 +416,13 @@ async def _dispatch_action(update: Update, context: ContextTypes.DEFAULT_TYPE, a
         return
 
     rendered_text, parse_mode = apply_reply_format(result.data, event_args.reply_format)
-    try:
-        await message.reply_text(rendered_text, parse_mode=parse_mode)
-    except BadRequest as exc:
-        if not _is_markdown_parse_error(exc):
-            raise
-
-        logging.warning(
-            "Falling back to plain-text reply for action %s after Markdown parse failure.",
-            action_name,
-        )
-        await message.reply_text(rendered_text)
+    await _send_reply_chunks(
+        message,
+        rendered_text,
+        parse_mode=parse_mode,
+        allow_markdown_fallback=True,
+        fallback_label=f"action {action_name}",
+    )
 
 
 def _parse_message_command(message_text: str) -> tuple[str, tuple[str, ...]] | None:
@@ -475,7 +556,7 @@ async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text(f"Action '{action_name}' is not registered.")
         return
 
-    await message.reply_text(build_action_info_text(resolved_action_name or action_name, details))
+    await _send_reply_chunks(message, build_action_info_text(resolved_action_name or action_name, details))
 
 
 async def actions_by_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -519,7 +600,8 @@ async def actions_by_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("No actions matched the requested tags.")
         return
 
-    await message.reply_text(
+    await _send_reply_chunks(
+        message,
         build_help_text(
             action_names,
             action_handler_counts,
@@ -553,7 +635,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         action_name: action_engine.get_action_tags(action_name)
         for action_name in action_names
     }
-    await message.reply_text(
+    await _send_reply_chunks(
+        message,
         build_help_text(action_names, action_handler_counts, action_aliases, action_tags),
     )
 
