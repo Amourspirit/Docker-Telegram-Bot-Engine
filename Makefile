@@ -39,6 +39,9 @@ help:
 	@echo "  make build-bot-actions    Build bot actions"
 	@echo "  make build-host-actions   Build host actions"
 	@echo "  make build-actions        Build both bot and host actions"
+	@echo "  make install-watchdog     Install watchdog service (macOS or Linux)"
+	@echo "  make uninstall-watchdog   Uninstall watchdog service (macOS or Linux)"
+	@echo "  make watchdog-logs        Tail watchdog log"
 
 build-bot-actions:
 	@if [ -d "$(BOT_ACTIONS_INPUT_DIR)" ]; then \
