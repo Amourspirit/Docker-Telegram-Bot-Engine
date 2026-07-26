@@ -23,7 +23,10 @@ HOST_ACTIONS_OUTPUT_PATH ?= storage/config/host/host-actions.yaml
 HOST_ACTIONS_DUPLICATES_REPORT ?= tmp/build/host-action-duplicates.json
 HOST_ACTIONS_SUMMARY_JSON ?= tmp/build/host-action-summary.json
 
-.PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status
+UNAME_S := $(shell uname -s)
+WATCHDOG_SCRIPT := $(PROJECT_ROOT)src/scripts/watchdog.sh
+
+.PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status watchdog-logs install-watchdog uninstall-watchdog
 
 help:
 	@echo "Targets:"
@@ -143,3 +146,59 @@ status:
 
 build-actions: build-bot-actions build-host-actions
 	@echo "All actions built successfully."
+
+watchdog-logs:
+	@mkdir -p "$(PROJECT_ROOT)storage/runner"
+	@touch "$(PROJECT_ROOT)storage/runner/watchdog.log"
+	@tail -f "$(PROJECT_ROOT)storage/runner/watchdog.log"
+
+install-watchdog:
+	@chmod +x "$(WATCHDOG_SCRIPT)"
+	@if [ "$(UNAME_S)" = "Darwin" ]; then \
+		PLIST_PATH="$(HOME)/Library/LaunchAgents/com.telegram-c2-bot.host-runner-watchdog.plist"; \
+		mkdir -p "$(HOME)/Library/LaunchAgents"; \
+		echo '<?xml version="1.0" encoding="UTF-8"?>' > $$PLIST_PATH; \
+		echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> $$PLIST_PATH; \
+		echo '<plist version="1.0"><dict>' >> $$PLIST_PATH; \
+		echo '  <key>Label</key><string>com.telegram-c2-bot.host-runner-watchdog</string>' >> $$PLIST_PATH; \
+		echo '  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>$(WATCHDOG_SCRIPT)</string></array>' >> $$PLIST_PATH; \
+		echo '  <key>RunAtLoad</key><true/>' >> $$PLIST_PATH; \
+		echo '  <key>KeepAlive</key><true/>' >> $$PLIST_PATH; \
+		echo '  <key>StandardOutPath</key><string>$(PROJECT_ROOT)storage/runner/watchdog.log</string>' >> $$PLIST_PATH; \
+		echo '  <key>StandardErrorPath</key><string>$(PROJECT_ROOT)storage/runner/watchdog.log</string>' >> $$PLIST_PATH; \
+		echo '</dict></plist>' >> $$PLIST_PATH; \
+		launchctl unload $$PLIST_PATH 2>/dev/null || true; \
+		launchctl load -w $$PLIST_PATH; \
+		echo "macOS launchd watchdog service installed & loaded."; \
+	elif [ "$(UNAME_S)" = "Linux" ]; then \
+		SERVICE_DIR="$(HOME)/.config/systemd/user"; \
+		SERVICE_PATH="$$SERVICE_DIR/host-runner-watchdog.service"; \
+		mkdir -p "$$SERVICE_DIR"; \
+		echo '[Unit]' > $$SERVICE_PATH; \
+		echo 'Description=Host Runner Watchdog' >> $$SERVICE_PATH; \
+		echo 'After=network.target docker.service' >> $$SERVICE_PATH; \
+		echo '[Service]' >> $$SERVICE_PATH; \
+		echo 'Type=simple' >> $$SERVICE_PATH; \
+		echo 'ExecStart=/bin/zsh $(WATCHDOG_SCRIPT)' >> $$SERVICE_PATH; \
+		echo 'Restart=always' >> $$SERVICE_PATH; \
+		echo 'Environment="PATH=/usr/local/bin:/usr/bin:/bin:$(HOME)/.local/bin"' >> $$SERVICE_PATH; \
+		echo '[Install]' >> $$SERVICE_PATH; \
+		echo 'WantedBy=default.target' >> $$SERVICE_PATH; \
+		systemctl --user daemon-reload; \
+		systemctl --user enable --now host-runner-watchdog.service; \
+		echo "Linux systemd user watchdog service installed & started."; \
+	fi
+
+uninstall-watchdog:
+	@if [ "$(UNAME_S)" = "Darwin" ]; then \
+		PLIST_PATH="$(HOME)/Library/LaunchAgents/com.telegram-c2-bot.host-runner-watchdog.plist"; \
+		launchctl unload -w $$PLIST_PATH 2>/dev/null || true; \
+		rm -f $$PLIST_PATH; \
+		echo "macOS launchd watchdog service uninstalled."; \
+	elif [ "$(UNAME_S)" = "Linux" ]; then \
+		systemctl --user stop host-runner-watchdog.service 2>/dev/null || true; \
+		systemctl --user disable host-runner-watchdog.service 2>/dev/null || true; \
+		rm -f "$(HOME)/.config/systemd/user/host-runner-watchdog.service"; \
+		systemctl --user daemon-reload; \
+		echo "Linux systemd user watchdog service uninstalled."; \
+	fi
