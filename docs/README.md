@@ -15,6 +15,22 @@ The configuration system consists of:
 2. **Config-Builder** – Merges templates into final configuration files
 3. **Make Commands** – Convenience commands to build configurations
 
+## Watchdog Overview
+
+This project includes a host-level watchdog that keeps the `host-runner` aligned with the Docker bot lifecycle.
+
+- If `telegram-c2-bot` is running and `host-runner` is not, the watchdog auto-starts the runner.
+- If the bot container is intentionally down, the watchdog stays idle.
+- This helps recover cleanly after host reboot, Docker startup delay, or runner crashes.
+
+Use these commands for watchdog lifecycle:
+
+- `make install-watchdog` to register it with `launchd` (macOS) or `systemd --user` (Linux)
+- `make uninstall-watchdog` to remove the OS-level service
+- `make watchdog-logs` to tail watchdog logs
+
+For architecture and platform details, see [Watchdog Guide](watchdog.md).
+
 ## Architecture
 
 ```
@@ -58,6 +74,7 @@ mkdir -p storage/config/{bot,host}
 Create template files in `storage/templates/`:
 
 **Bot Actions** (`storage/templates/actions/my-actions.yaml`):
+
 ```yaml
 actions:
   my_status:
@@ -73,6 +90,7 @@ actions:
 ```
 
 **Host Operations** (`storage/templates/host-actions/my-operations.yaml`):
+
 ```yaml
 operations:
   server.my_operation:
@@ -86,6 +104,7 @@ operations:
 ```
 
 **Users** (`storage/templates/users/my-users.yaml`):
+
 ```yaml
 users:
   "1234567890":
@@ -134,6 +153,7 @@ operations:
 ```
 
 **Precedence:**
+
 1. Handler `timeout_seconds` (highest priority)
 2. Operation `timeout_seconds` (fallback)
 3. No timeout (lowest priority)
@@ -229,16 +249,19 @@ handlers:
 ## Troubleshooting
 
 **Templates not merging?**
+
 - Check glob patterns in `.env`
 - Verify template files have `.yaml`, `.yml`, or `.json` extension
 - Run `make build-actions` with verbose output
 
 **Action not appearing?**
+
 - Verify `allowed_roles` is set
 - Check user has required role in `users.yaml`
 - Reload bot with `/reload_actions`
 
 **Timeout not working?**
+
 - Handler timeout overrides operation timeout
 - Check both values: `handler.timeout_seconds` and `operation.timeout_seconds`
 - See [Priority Overrides](priority-overrides.md) for precedence rules
