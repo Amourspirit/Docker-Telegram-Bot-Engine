@@ -355,7 +355,31 @@ actions:
     )
 
     assert Result.is_failure(result)
-    assert "host handler params must be a mapping" in str(result.error)
+    assert "actions['cf_ui_url'].handlers[0].params must be a mapping" in str(result.error)
+
+
+def test_load_actions_from_yaml_rejects_host_handler_param_non_string_value() -> None:
+    engine = ActionEngine()
+    result = load_actions_from_yaml(
+        engine,
+        """
+actions:
+  spiral_stack_router_health:
+    allowed_roles: [admin]
+    handlers:
+      - id: host.server.stack_router_health
+        target: host
+        operation: server.stack_localhost_curl
+        params:
+          port: 8080
+          path: /v1/health
+""".strip(),
+        replace_configured_actions=True,
+    )
+
+    assert Result.is_failure(result)
+    assert "actions['spiral_stack_router_health'].handlers[0].params['port']" in str(result.error)
+    assert "must be a string, got int" in str(result.error)
 
 
 def test_load_actions_from_file_unsupported_extension(tmp_path: Path) -> None:

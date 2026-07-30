@@ -27,35 +27,51 @@ def _resolve_callable(module_name: str, callable_name: str) -> Any:
     return getattr(module, callable_name)
 
 
-def _normalize_handler_params(handler: dict[str, Any]) -> dict[str, str] | None:
+def _normalize_handler_params(
+    handler: dict[str, Any],
+    handler_path: str,
+) -> dict[str, str] | None:
     raw_params = handler.get("params")
     if raw_params is None:
         return None
 
     if not isinstance(raw_params, dict):
-        raise ValueError("host handler params must be a mapping of string keys to string values")
+        raise ValueError(
+            f"{handler_path}.params must be a mapping of string keys to string values"
+        )
 
     normalized: dict[str, str] = {}
     for raw_key, raw_value in raw_params.items():
         if not isinstance(raw_key, str) or not raw_key.strip():
-            raise ValueError("host handler params keys must be non-empty strings")
+            raise ValueError(f"{handler_path}.params keys must be non-empty strings")
         if not isinstance(raw_value, str):
-            raise ValueError("host handler params values must be strings")
+            raise ValueError(
+                f"{handler_path}.params[{raw_key!r}] must be a string, got {type(raw_value).__name__}"
+            )
         normalized[raw_key] = raw_value
 
     return normalized
 
 
-def _resolve_handler_callback(handler: dict[str, Any]) -> Any:
+def _resolve_handler_callback(
+    handler: dict[str, Any],
+    handler_path: str,
+) -> Any:
     target = str(handler.get("target", "local")).strip().lower()
     if target == "local":
-        module_name = handler["module"]
-        callable_name = handler["callable"]
+        module_name = handler.get("module")
+        callable_name = handler.get("callable")
+        if not isinstance(module_name, str) or not module_name.strip():
+            raise ValueError(f"{handler_path}.module must be a non-empty string")
+        if not isinstance(callable_name, str) or not callable_name.strip():
+            raise ValueError(f"{handler_path}.callable must be a non-empty string")
         return _resolve_callable(module_name, callable_name)
 
     if target == "host":
-        operation_name = handler["operation"]
-        operation_params = _normalize_handler_params(handler)
+        operation_name = handler.get("operation")
+        if not isinstance(operation_name, str) or not operation_name.strip():
+            raise ValueError(f"{handler_path}.operation must be a non-empty string")
+        operation_params = _normalize_handler_params(handler, handler_path)
         timeout_seconds = handler.get("timeout_seconds")
         return build_host_operation_handler(
             operation_name,
@@ -237,13 +253,24 @@ def _load_actions_from_payload(
             )
             engine.register_aliases(action_name, aliases)
 
-            for handler in action_config.get("handlers", []):
-                handler_id = handler["id"]
+            raw_handlers = action_config.get("handlers", [])
+            if not isinstance(raw_handlers, list):
+                raise ValueError(f"actions[{action_name!r}].handlers must be a list")
+
+            for handler_index, handler in enumerate(raw_handlers):
+                handler_path = f"actions[{action_name!r}].handlers[{handler_index}]"
+                if not isinstance(handler, dict):
+                    raise ValueError(f"{handler_path} must be a mapping")
+
+                handler_id = handler.get("id")
+                if not isinstance(handler_id, str) or not handler_id.strip():
+                    raise ValueError(f"{handler_path}.id must be a non-empty string")
+
                 stage = int(handler.get("stage", 0))
                 handler_stop_on_failure = handler.get("stop_on_failure")
                 timeout_seconds = handler.get("timeout_seconds")
 
-                callback = _resolve_handler_callback(handler)
+                callback = _resolve_handler_callback(handler, handler_path)
                 engine.register_handler(
                     action_name=action_name,
                     handler_id=handler_id,

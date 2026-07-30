@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from telegram.error import BadRequest
 
 from bot_service.engine import ActionPolicy
@@ -378,6 +379,53 @@ async def test_reload_actions_requires_admin_role(monkeypatch) -> None:
     reply_text.assert_awaited_once()
     args, _kwargs = reply_text.await_args
     assert "not allowed" in args[0]
+
+
+async def test_reload_actions_failure_surfaces_specific_config_error(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    bot.action_engine.set_user_roles({1: ("admin",)})
+    monkeypatch.setattr(
+        bot,
+        "_reload_bot_configs_with_rollback",
+        lambda: (
+            Result.failure(
+                ValueError(
+                    "Actions config error in /tmp/actions.yaml: "
+                    "actions['spiral_stack_router_health'].handlers[0].params['port'] "
+                    "must be a string, got int"
+                )
+            ),
+            False,
+        ),
+    )
+
+    reply_text = AsyncMock()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(reply_text=reply_text),
+    )
+    context = SimpleNamespace(args=[])
+
+    await bot.reload_actions(update, context)
+
+    reply_text.assert_awaited_once()
+    args, kwargs = reply_text.await_args
+    assert "ConfigValidationError" in args[0]
+    assert "params['port'] must be a string, got int" in args[0]
+    assert kwargs == {}
+
+
+def test_main_fails_fast_when_startup_config_load_fails(monkeypatch) -> None:
+    bot = _load_bot_module(monkeypatch)
+    monkeypatch.setattr(bot, "TOKEN", "test-token")
+    monkeypatch.setattr(
+        bot,
+        "_reload_bot_configs_with_rollback",
+        lambda: (Result.failure(ValueError("boom")), False),
+    )
+
+    with pytest.raises(RuntimeError, match="ConfigValidationError: boom"):
+        bot.main()
 
 
 async def test_action_info_accepts_alias(monkeypatch) -> None:

@@ -215,6 +215,13 @@ def _load_actions_config_from_text(
         replace_configured_actions=True,
     )
 
+    if Result.is_failure(result):
+        return Result.failure(
+            ValueError(
+                f"Actions config error in {config_path}: {result.error}"
+            )
+        )
+
     if Result.is_success(result):
         reserved_conflicts: list[str] = []
         for reserved_name in sorted(RESERVED_COMMAND_NAMES):
@@ -268,6 +275,13 @@ def _load_users_config_from_text(
         config_format=config_format,
         replace_configured_users=True,
     )
+
+    if Result.is_failure(result):
+        return Result.failure(
+            ValueError(
+                f"Users config error in {config_path}: {result.error}"
+            )
+        )
 
     if Result.is_success(result) and update_last_known_good:
         LAST_KNOWN_GOOD_USERS_CONFIG_TEXT = config_text
@@ -353,6 +367,10 @@ def _reload_bot_configs_with_rollback() -> tuple[Result[tuple[int, Path, int, Pa
         ), True
 
     return Result.failure(load_result.error), False
+
+
+def _format_config_error(error: BaseException) -> str:
+    return f"ConfigValidationError: {error}"
 
 
 def _load_host_actions_config() -> Result[tuple[int, Path], BaseException]:
@@ -534,7 +552,13 @@ async def reload_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    await message.reply_text(f"❌ Failed to reload users/actions configuration: {reload_result.error}")
+    formatted_error = _format_config_error(reload_result.error)
+    await message.reply_text(f"❌ Failed to reload users/actions configuration: {formatted_error}")
+    logging.error(
+        "Config reload failed for user ID %s: %s",
+        user.id,
+        formatted_error,
+    )
 
 
 async def action_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -661,7 +685,9 @@ def main() -> None:
                 reload_count,
             )
     else:
-        logging.error("Failed to reload actions at startup: %s", reload_result.error)
+        formatted_error = _format_config_error(reload_result.error)
+        logging.critical("Failed to load users/actions at startup: %s", formatted_error)
+        raise RuntimeError(formatted_error)
 
     app = ApplicationBuilder().token(TOKEN).build()
 
