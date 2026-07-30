@@ -190,6 +190,15 @@ If the bot does not reply:
 - `make status` shows bot container and host runner status
 - `make start-host-runner` starts only the host runner
 - `make stop-host-runner` stops only the host runner
+- `make build-bot-actions` builds bot actions from `storage/templates/actions` into `storage/config/bot/actions.yaml`
+- `make build-host-actions` builds host actions from `storage/templates/host-actions` into `storage/config/host/host-actions.yaml`
+- `make build-actions` runs `config-backup`, `build-bot-actions`, and `build-host-actions`
+- `make config-backup` copies `storage/config` to `storage/backup/config_YY-MM-DD_HH-MM-SS`
+- `make config-backup-list` lists existing config backups in newest-first order
+- `make config-backup-cleanup` removes old backups and keeps the latest `CONFIG_BACKUP_KEEP` (default `5`)
+- `make install-watchdog` installs and starts the watchdog service (macOS launchd or Linux systemd user service)
+- `make uninstall-watchdog` uninstalls the watchdog service
+- `make watchdog-logs` tails the watchdog log
 
 ## No Port Exposure Required
 
