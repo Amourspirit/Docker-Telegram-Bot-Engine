@@ -103,3 +103,10 @@ operations:
     allow_user_args: false
     allowed_placeholders:
     - action
+  server.system_info:
+    command:
+      - /bin/bash
+      - -lc
+      - source "$HOST_PROJECT_ROOT/storage/scripts/sysinfo_md.sh" && markdown_table
+    timeout_seconds: 15
+    allow_user_args: false

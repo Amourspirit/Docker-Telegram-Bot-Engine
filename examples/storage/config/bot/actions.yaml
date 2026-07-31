@@ -874,3 +874,20 @@ actions:
       fenced: true
       fence_lang: text
     unregister: []
+  server_res:
+    stop_on_failure: true
+    allowed_roles:
+      - admin
+    tags:
+      - status
+    handlers:
+      - id: host.server.resources_md
+        target: host
+        operation: server.system_info
+        stage: 0
+        timeout_seconds: 10
+    unregister: []
+    reply_format:
+      format: markdown
+      fenced: true
+      fence_lang: md
