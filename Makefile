@@ -29,7 +29,7 @@ CONFIG_BACKUP_KEEP ?= 5
 UNAME_S := $(shell uname -s)
 WATCHDOG_SCRIPT := $(PROJECT_ROOT)src/scripts/watchdog.sh
 
-.PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status watchdog-logs install-watchdog uninstall-watchdog config-backup config-backup-list config-backup-cleanup
+.PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status watchdog-logs watchdog-install watchdog-uninstall watchdog-load watchdog-unload config-backup config-backup-list config-backup-cleanup
 
 help:
 	@echo "Targets:"
@@ -45,9 +45,11 @@ help:
 	@echo "  make config-backup        Backup storage/config into storage/backup with timestamp"
 	@echo "  make config-backup-list   List existing config backups (newest first)"
 	@echo "  make config-backup-cleanup Remove old backups, keep latest N (CONFIG_BACKUP_KEEP)"
-	@echo "  make install-watchdog     Install watchdog service (macOS or Linux)"
-	@echo "  make uninstall-watchdog   Uninstall watchdog service (macOS or Linux)"
+	@echo "  make watchdog-install     Install watchdog service (macOS or Linux)"
+	@echo "  make watchdog-uninstall   Uninstall watchdog service (macOS or Linux)"
 	@echo "  make watchdog-logs        Tail watchdog log"
+	@echo "  make watchdog-load        Load watchdog service (macOS or Linux)"
+	@echo "  make watchdog-unload      Unload watchdog service (macOS or Linux)"
 
 build-bot-actions:
 	@if [ -d "$(BOT_ACTIONS_INPUT_DIR)" ]; then \
@@ -199,21 +201,31 @@ watchdog-logs:
 	@touch "$(PROJECT_ROOT)storage/runner/watchdog.log"
 	@tail -f "$(PROJECT_ROOT)storage/runner/watchdog.log"
 
-install-watchdog:
+watchdog-install:
 	@chmod +x "$(WATCHDOG_SCRIPT)"
 	@if [ "$(UNAME_S)" = "Darwin" ]; then \
 		PLIST_PATH="$(HOME)/Library/LaunchAgents/com.telegram-c2-bot.host-runner-watchdog.plist"; \
 		mkdir -p "$(HOME)/Library/LaunchAgents"; \
 		echo '<?xml version="1.0" encoding="UTF-8"?>' > $$PLIST_PATH; \
 		echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> $$PLIST_PATH; \
-		echo '<plist version="1.0"><dict>' >> $$PLIST_PATH; \
-		echo '  <key>Label</key><string>com.telegram-c2-bot.host-runner-watchdog</string>' >> $$PLIST_PATH; \
-		echo '  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>$(WATCHDOG_SCRIPT)</string></array>' >> $$PLIST_PATH; \
-		echo '  <key>RunAtLoad</key><true/>' >> $$PLIST_PATH; \
-		echo '  <key>KeepAlive</key><true/>' >> $$PLIST_PATH; \
-		echo '  <key>StandardOutPath</key><string>$(PROJECT_ROOT)storage/runner/watchdog.log</string>' >> $$PLIST_PATH; \
-		echo '  <key>StandardErrorPath</key><string>$(PROJECT_ROOT)storage/runner/watchdog.log</string>' >> $$PLIST_PATH; \
-		echo '</dict></plist>' >> $$PLIST_PATH; \
+		echo '<plist version="1.0">' >> $$PLIST_PATH; \
+		echo '  <dict>' >> $$PLIST_PATH; \
+		echo '    <key>Label</key>' >> $$PLIST_PATH; \
+		echo '    <string>com.telegram-c2-bot.host-runner-watchdog</string>' >> $$PLIST_PATH; \
+		echo '    <key>ProgramArguments</key>' >> $$PLIST_PATH; \
+		echo '      <array>' >> $$PLIST_PATH; \
+		echo '        <string>/bin/zsh</string>' >> $$PLIST_PATH; \
+		echo '        <string>$(WATCHDOG_SCRIPT)</string>' >> $$PLIST_PATH; \
+		echo '      </array>' >> $$PLIST_PATH; \
+		echo '    <key>RunAtLoad</key><true/>' >> $$PLIST_PATH; \
+		echo '    <key>KeepAlive</key><true/>' >> $$PLIST_PATH; \
+		echo '    <key>StandardOutPath</key>' >> $$PLIST_PATH; \
+		echo '    <string>$(PROJECT_ROOT)storage/runner/watchdog.log</string>' >> $$PLIST_PATH; \
+		echo '    <key>StandardErrorPath</key>' >> $$PLIST_PATH; \
+		echo '    <string>$(PROJECT_ROOT)storage/runner/watchdog.log</string>' >> $$PLIST_PATH; \
+		echo '  </dict>' >> $$PLIST_PATH; \
+		echo '</plist>' >> $$PLIST_PATH; \
+		chmod 644 $$PLIST_PATH; \
 		launchctl unload $$PLIST_PATH 2>/dev/null || true; \
 		launchctl load -w $$PLIST_PATH; \
 		echo "macOS launchd watchdog service installed & loaded."; \
@@ -236,7 +248,7 @@ install-watchdog:
 		echo "Linux systemd user watchdog service installed & started."; \
 	fi
 
-uninstall-watchdog:
+watchdog-uninstall:
 	@if [ "$(UNAME_S)" = "Darwin" ]; then \
 		PLIST_PATH="$(HOME)/Library/LaunchAgents/com.telegram-c2-bot.host-runner-watchdog.plist"; \
 		launchctl unload -w $$PLIST_PATH 2>/dev/null || true; \
@@ -248,4 +260,25 @@ uninstall-watchdog:
 		rm -f "$(HOME)/.config/systemd/user/host-runner-watchdog.service"; \
 		systemctl --user daemon-reload; \
 		echo "Linux systemd user watchdog service uninstalled."; \
+	fi
+
+watchdog-load:
+	@if [ "$(UNAME_S)" = "Darwin" ]; then \
+		PLIST_PATH="$(HOME)/Library/LaunchAgents/com.telegram-c2-bot.host-runner-watchdog.plist"; \
+		launchctl load -w $$PLIST_PATH; \
+		echo "macOS launchd watchdog service loaded."; \
+	elif [ "$(UNAME_S)" = "Linux" ]; then \
+		systemctl --user enable --now host-runner-watchdog.service; \
+		echo "Linux systemd user watchdog service enabled & started."; \
+	fi
+
+watchdog-unload:
+	@if [ "$(UNAME_S)" = "Darwin" ]; then \
+		PLIST_PATH="$(HOME)/Library/LaunchAgents/com.telegram-c2-bot.host-runner-watchdog.plist"; \
+		launchctl unload -w $$PLIST_PATH; \
+		echo "macOS launchd watchdog service unloaded."; \
+	elif [ "$(UNAME_S)" = "Linux" ]; then \
+		systemctl --user stop host-runner-watchdog.service; \
+		systemctl --user disable host-runner-watchdog.service; \
+		echo "Linux systemd user watchdog service stopped & disabled."; \
 	fi
