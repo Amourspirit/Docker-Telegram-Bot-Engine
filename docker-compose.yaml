@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME}
+name: ${TELEGRAM_BOT_PROJECT_NAME:?Set TELEGRAM_BOT_PROJECT_NAME in .env}
 
 services:
   telegram-c2-bot:
