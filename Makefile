@@ -23,6 +23,8 @@ HOST_ACTIONS_OUTPUT_PATH ?= storage/config/host/host-actions.yaml
 HOST_ACTIONS_DUPLICATES_REPORT ?= tmp/build/host-action-duplicates.json
 HOST_ACTIONS_SUMMARY_JSON ?= tmp/build/host-action-summary.json
 CONFIG_BACKUP_SOURCE_DIR ?= $(PROJECT_ROOT)storage/config
+SCRIPTS_BACKUP_SOURCE_DIR ?= $(PROJECT_ROOT)storage/scripts
+TEMPLATES_BACKUP_SOURCE_DIR ?= $(PROJECT_ROOT)storage/templates
 CONFIG_BACKUP_ROOT_DIR ?= $(PROJECT_ROOT)storage/backup
 CONFIG_BACKUP_KEEP ?= 5
 
@@ -42,7 +44,7 @@ help:
 	@echo "  make build-bot-actions    Build bot actions"
 	@echo "  make build-host-actions   Build host actions"
 	@echo "  make build-actions        Build both bot and host actions"
-	@echo "  make config-backup        Backup storage/config into storage/backup with timestamp"
+	@echo "  make config-backup        Backup storage/{config,scripts,templates} into storage/backup with timestamp"
 	@echo "  make config-backup-list   List existing config backups (newest first)"
 	@echo "  make config-backup-cleanup Remove old backups, keep latest N (CONFIG_BACKUP_KEEP)"
 	@echo "  make watchdog-install     Install watchdog service (macOS or Linux)"
@@ -159,15 +161,24 @@ build-actions: config-backup build-bot-actions build-host-actions
 	@echo "All actions built successfully."
 
 config-backup:
-	@if [ -d "$(CONFIG_BACKUP_SOURCE_DIR)" ]; then \
-		mkdir -p "$(CONFIG_BACKUP_ROOT_DIR)"; \
-		timestamp="$$(date +%y-%m-%d_%H-%M-%S)"; \
-		destination="$(CONFIG_BACKUP_ROOT_DIR)/config_$${timestamp}"; \
-		cp -R "$(CONFIG_BACKUP_SOURCE_DIR)" "$$destination"; \
-		echo "Config backup created: $$destination"; \
-	else \
-		echo "Error: $(CONFIG_BACKUP_SOURCE_DIR) directory does not exist"; \
-	fi
+	@mkdir -p "$(CONFIG_BACKUP_ROOT_DIR)"
+	@timestamp="$$(date +%y-%m-%d_%H-%M-%S)"; \
+	destination="$(CONFIG_BACKUP_ROOT_DIR)/config_$${timestamp}"; \
+	mkdir -p "$$destination"; \
+	errors=""; \
+	for src in "$(CONFIG_BACKUP_SOURCE_DIR)" "$(SCRIPTS_BACKUP_SOURCE_DIR)" "$(TEMPLATES_BACKUP_SOURCE_DIR)"; do \
+		if [ -d "$$src" ]; then \
+			cp -R "$$src" "$$destination/$$(basename "$$src")"; \
+			echo "Backed up: $$src"; \
+		else \
+			errors="$$errors $$src"; \
+		fi; \
+	done; \
+	if [ -n "$$errors" ]; then \
+		echo "Error: missing backup source dir(s):$$errors"; \
+		exit 1; \
+	fi; \
+	echo "Config backup created: $$destination"
 
 config-backup-list:
 	@if [ -d "$(CONFIG_BACKUP_ROOT_DIR)" ] && ls -1d "$(CONFIG_BACKUP_ROOT_DIR)"/config_* >/dev/null 2>&1; then \
