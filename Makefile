@@ -27,11 +27,14 @@ SCRIPTS_BACKUP_SOURCE_DIR ?= $(PROJECT_ROOT)storage/scripts
 TEMPLATES_BACKUP_SOURCE_DIR ?= $(PROJECT_ROOT)storage/templates
 CONFIG_BACKUP_ROOT_DIR ?= $(PROJECT_ROOT)storage/backup
 CONFIG_BACKUP_KEEP ?= 5
+CONFIG_PATH ?= ./config
+API_KEYS_FILE ?= $(CONFIG_PATH)/bot/api-keys.yaml
+API_OPENAPI_PATH ?= storage/api/openapi.json
 
 UNAME_S := $(shell uname -s)
 WATCHDOG_SCRIPT := $(PROJECT_ROOT)src/scripts/watchdog.sh
 
-.PHONY: help up down restart start-host-runner stop-host-runner logs host-runner-logs status watchdog-logs watchdog-install watchdog-uninstall watchdog-load watchdog-unload config-backup config-backup-list config-backup-cleanup
+.PHONY: help build-api api-key api-logs up down restart start-host-runner stop-host-runner logs host-runner-logs status watchdog-logs watchdog-install watchdog-uninstall watchdog-load watchdog-unload config-backup config-backup-list config-backup-cleanup
 
 help:
 	@echo "Targets:"
@@ -44,6 +47,9 @@ help:
 	@echo "  make build-bot-actions    Build bot actions"
 	@echo "  make build-host-actions   Build host actions"
 	@echo "  make build-actions        Build both bot and host actions"
+	@echo "  make build-api            Build bot actions, restart the API with new routes, export OpenAPI"
+	@echo "  make api-key USER_ID=<id> Create an API key for a Telegram user ID (prints it once)"
+	@echo "  make api-logs             Tail API container logs"
 	@echo "  make config-backup        Backup storage/{config,scripts,templates} into storage/backup with timestamp"
 	@echo "  make config-backup-list   List existing config backups (newest first)"
 	@echo "  make config-backup-cleanup Remove old backups, keep latest N (CONFIG_BACKUP_KEEP)"
@@ -86,6 +92,28 @@ build-host-actions:
 	else \
 		echo "Error: $(HOST_ACTIONS_INPUT_DIR) directory does not exist"; \
 	fi
+
+build-api: build-bot-actions
+	@mkdir -p "$(PROJECT_ROOT)$(dir $(API_OPENAPI_PATH))"
+	@cd "$(PROJECT_ROOT)" && \
+		if [[ -f .env ]]; then set -a; source .env; set +a; fi; \
+		docker compose up -d --build telegram-c2-api && \
+		docker compose run --rm --no-deps -T telegram-c2-api \
+			python -c 'from bot_service.api import export_openapi; export_openapi()' > "$(API_OPENAPI_PATH).tmp" && \
+		mv "$(API_OPENAPI_PATH).tmp" "$(API_OPENAPI_PATH)"
+	@echo "API rebuilt. OpenAPI: $(API_OPENAPI_PATH). Docs: http://127.0.0.1:$${API_PORT:-8080}/docs"
+
+api-key:
+	@if ! [[ "$(USER_ID)" =~ ^[0-9]+$$ ]]; then echo "Usage: make api-key USER_ID=<telegram_user_id>"; exit 1; fi
+	@cd "$(PROJECT_ROOT)" && mkdir -p "$(dir $(API_KEYS_FILE))" && \
+		python3 -c 'import hashlib, secrets, sys; k = secrets.token_urlsafe(32); open(sys.argv[2], "a").write(f"\"{hashlib.sha256(k.encode()).hexdigest()}\": {sys.argv[1]}\n"); print(k)' \
+			"$(USER_ID)" "$(API_KEYS_FILE)"
+	@echo "Key above is shown once. Hash stored in $(API_KEYS_FILE). Use: Authorization: Bearer <key>"
+
+api-logs:
+	@cd "$(PROJECT_ROOT)" && \
+		if [[ -f .env ]]; then set -a; source .env; set +a; fi; \
+		docker compose logs -f telegram-c2-api
 
 up: start-host-runner
 	@mkdir -p "$(PROJECT_ROOT)storage/runner"

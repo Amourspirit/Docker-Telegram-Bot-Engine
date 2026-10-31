@@ -59,3 +59,6 @@ tree.txt
 !.envrc.example
 
 Project-Local-*
+
+# API key hashes (make api-key)
+api-keys.yaml

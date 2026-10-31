@@ -15,3 +15,31 @@ services:
       # macOS Docker Desktop Socket Mapping
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
       - ${CONFIG_PATH?Set CONFIG_PATH in .env}/bot:/app/config:ro
+
+  # HTTP API: one POST /actions/<name> per configured Action (docs/adr/0001).
+  telegram-c2-api:
+    build:
+      context: .
+      dockerfile: ./src/bot/Dockerfile
+    container_name: telegram-c2-api
+    restart: unless-stopped
+    command: ["python", "-m", "bot_service.api"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    environment:
+      - BOT_HOST_ACTION_ENDPOINT=${BOT_HOST_ACTION_ENDPOINT:-host.docker.internal:8787}
+      - BOT_HOST_ACTION_SOCKET=${BOT_HOST_ACTION_SOCKET:-/var/run/telegram-bot/host-actions.sock}
+    volumes:
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${CONFIG_PATH?Set CONFIG_PATH in .env}/bot:/app/config:ro
+    labels:
+      tsdproxy.enable: "${TSDPROXY_ENABLE:-false}"
+      tsdproxy.name: "${TSDPROXY_NAME:?Set TSDPROXY_NAME in .env}"
+      tsdproxy.ephemeral: "${TSDPROXY_EPHEMERAL:-true}"
+      tsdproxy.tags: "${TSDPROXY_TAGS:-}"
+      cfroute.enabled: "${ARCANE_CF_ROUTE_ENABLED:?Set ARCANE_CF_ROUTE_ENABLED in .env}"
+      cfroute.names: ${ARCANE_CF_ROUTE_NAMES:?Set ARCANE_CF_ROUTE_NAMES in .env}
+      cfroute.proxied: "${ARCANE_CF_ROUTE_PROXIED:?Set ARCANE_CF_ROUTE_PROXIED in .env}"
+      cfroute.delete_on_stop: "${ARCANE_CF_ROUTE_DELETE_ON_STOP:?Set ARCANE_CF_ROUTE_DELETE_ON_STOP in .env}"
+      cfroute.zone_id: ${CF_ZONE_ID:?Set CF_ZONE_ID in .env}
+      cfroute.tunnel_cname: ${CF_TUNNEL_CNAME:?Set CF_TUNNEL_CNAME in .env}

@@ -199,6 +199,23 @@ If the bot does not reply:
 - `make install-watchdog` installs and starts the watchdog service (macOS launchd or Linux systemd user service)
 - `make uninstall-watchdog` uninstalls the watchdog service
 - `make watchdog-logs` tails the watchdog log
+- `make build-api` builds bot actions, restarts the API container so it picks up new routes, and writes `storage/api/openapi.json`
+- `make api-key USER_ID=<telegram_user_id>` prints a new API key; only its SHA-256 hash is stored in `$CONFIG_PATH/bot/api-keys.yaml`
+- `make api-logs` tails the API container logs
+
+## HTTP API
+
+`telegram-c2-api` exposes every configured Action as `POST /actions/<name>`, with the same roles as Telegram (see `GLOSSARY.md`, `docs/adr/0001-runtime-generated-api-routes.md`). It listens on `127.0.0.1:${API_PORT:-8080}` only, and the interactive docs are at `/docs`.
+
+```bash
+make api-key USER_ID=1234567890          # API key acts as this Telegram user
+curl -X POST http://127.0.0.1:8080/actions/logs \
+  -H "Authorization: Bearer <key>" -d '{"args": ["my-container", "50"]}' -H 'Content-Type: application/json'
+```
+
+- `GET /actions?tag=<tag>` is the equivalent of `/help` and `/actions_by_tag`. `GET /actions/<name>` is the equivalent of `/action_info`.
+- Status codes: `401` bad key, `403` missing role, `422` invalid args, `502` handler/host failure, `504` handler timeout.
+- There is no reload endpoint. Run `make build-api` after config changes.
 
 ## No Port Exposure Required
 
