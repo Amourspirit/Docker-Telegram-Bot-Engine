@@ -118,8 +118,9 @@ users/actions snapshot in memory.
   a Unix socket via `HOST_ACTIONS_SOCKET`. The bot prefers `BOT_HOST_ACTION_ENDPOINT` over
   `BOT_HOST_ACTION_SOCKET`.
 - The compose file mounts only the Docker socket and the bot config, so Unix-socket mode needs an
-  extra mount, and on Linux `host.docker.internal` needs `extra_hosts: host-gateway` (not present in
-  `docker-compose.yaml`) — verify TCP reachability from the container before debugging the runner.
+  extra mount. Both compose services declare `extra_hosts: host.docker.internal:host-gateway` so the
+  TCP name resolves on Linux; if that entry is dropped, host actions fail with `[Errno -2] Name or
+  service not known`. Verify TCP reachability from the container before debugging the runner.
 
 ## Operational gotchas
 

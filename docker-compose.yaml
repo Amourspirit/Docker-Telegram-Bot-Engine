@@ -11,6 +11,10 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env}
       - BOT_HOST_ACTION_ENDPOINT=${BOT_HOST_ACTION_ENDPOINT:-host.docker.internal:8787}
       - BOT_HOST_ACTION_SOCKET=${BOT_HOST_ACTION_SOCKET:-/var/run/telegram-bot/host-actions.sock}
+    # On Linux, `host.docker.internal` is not registered by default. Without this
+    # the bot fails host actions with `[Errno -2] Name or service not known`.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # macOS Docker Desktop Socket Mapping
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
@@ -29,6 +33,8 @@ services:
     environment:
       - BOT_HOST_ACTION_ENDPOINT=${BOT_HOST_ACTION_ENDPOINT:-host.docker.internal:8787}
       - BOT_HOST_ACTION_SOCKET=${BOT_HOST_ACTION_SOCKET:-/var/run/telegram-bot/host-actions.sock}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
       - ${CONFIG_PATH?Set CONFIG_PATH in .env}/bot:/app/config:ro
@@ -37,9 +43,9 @@ services:
       tsdproxy.name: "${TSDPROXY_NAME:?Set TSDPROXY_NAME in .env}"
       tsdproxy.ephemeral: "${TSDPROXY_EPHEMERAL:-true}"
       tsdproxy.tags: "${TSDPROXY_TAGS:-}"
-      cfroute.enabled: "${ARCANE_CF_ROUTE_ENABLED:?Set ARCANE_CF_ROUTE_ENABLED in .env}"
-      cfroute.names: ${ARCANE_CF_ROUTE_NAMES:?Set ARCANE_CF_ROUTE_NAMES in .env}
-      cfroute.proxied: "${ARCANE_CF_ROUTE_PROXIED:?Set ARCANE_CF_ROUTE_PROXIED in .env}"
-      cfroute.delete_on_stop: "${ARCANE_CF_ROUTE_DELETE_ON_STOP:?Set ARCANE_CF_ROUTE_DELETE_ON_STOP in .env}"
+      cfroute.enabled: "${CF_ROUTE_ENABLED:?Set CF_ROUTE_ENABLED in .env}"
+      cfroute.names: ${CF_ROUTE_NAMES:?Set CF_ROUTE_NAMES in .env}
+      cfroute.proxied: "${CF_ROUTE_PROXIED:?Set CF_ROUTE_PROXIED in .env}"
+      cfroute.delete_on_stop: "${CF_ROUTE_DELETE_ON_STOP:?Set CF_ROUTE_DELETE_ON_STOP in .env}"
       cfroute.zone_id: ${CF_ZONE_ID:?Set CF_ZONE_ID in .env}
       cfroute.tunnel_cname: ${CF_TUNNEL_CNAME:?Set CF_TUNNEL_CNAME in .env}
