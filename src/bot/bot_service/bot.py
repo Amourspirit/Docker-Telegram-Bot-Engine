@@ -16,13 +16,14 @@ from bot_service.event_args import EventArgs
 from bot_service.host_client import HostActionClient
 from bot_service.host_loader import load_actions_from_text
 from bot_service.host_loader import load_users_from_text
+from bot_service.logging_setup import configure_logging
 from bot_service.presentation import build_action_info_text
 from bot_service.presentation import build_help_text
 from bot_service.reply_format import apply_reply_format
 from bot_service.result import Result
 
-# Configure logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# Configure logging (redacts the bot token from httpx request URLs)
+configure_logging()
 
 # Environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
